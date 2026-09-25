@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="在 MacBook Air M5 上，从概念、参数、训练到推理与性能优化，一步一步掌握 Whisper ASR。">
+  <title>Whisper ASR · 交互式实战教程</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23091420'/%3E%3Cpath d='M13 34h5l3-14 5 29 5-37 5 40 5-30 4 18 3-6h5' fill='none' stroke='%234de3c1' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --ink: #091420;
+      --ink-2: #122536;
+      --paper: #f4f7f5;
+      --white: #ffffff;
+      --muted: #607080;
+      --line: #d8e1df;
+      --mint: #16b899;
+      --mint-bright: #4de3c1;
+      --amber: #f2aa4c;
+      --blue: #5c8df6;
+      --radius: 18px;
+      --shadow: 0 18px 50px rgba(5, 24, 38, .10);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    a { color: inherit; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      color: #eafbf7;
+      background: rgba(9, 20, 32, .96);
+      border-bottom: 1px solid rgba(255,255,255,.09);
+      backdrop-filter: blur(14px);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 760; letter-spacing: -.02em; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: #173247; }
+    .brand-mark svg { width: 24px; }
+    .env-badge { padding: 6px 11px; border: 1px solid rgba(77,227,193,.35); border-radius: 99px; color: var(--mint-bright); font-size: .82rem; }
+
+    .layout { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: calc(100vh - 66px); }
+    .sidebar {
+      position: sticky;
+      top: 66px;
+      height: calc(100vh - 66px);
+      padding: 28px 20px;
+      color: #cfdbdf;
+      background: var(--ink);
+      overflow: auto;
+    }
+    .side-label { margin: 0 10px 14px; color: #7f97a5; font-size: .75rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .lesson-nav { display: grid; gap: 5px; }
+    .lesson-nav a {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 9px;
+      align-items: center;
+      padding: 10px 11px;
+      color: #aebfc7;
+      text-decoration: none;
+      border-radius: 11px;
+      font-size: .9rem;
+    }
+    .lesson-nav a:hover, .lesson-nav a.active { color: #fff; background: #173247; }
+    .lesson-nav a.active .nav-num { color: var(--mint-bright); border-color: rgba(77,227,193,.5); }
+    .nav-num { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #365064; border-radius: 50%; font-size: .72rem; }
+    .side-progress { margin: 28px 10px 0; }
+    .progress-meta { display: flex; justify-content: space-between; font-size: .77rem; color: #8da3ad; }
+    .progress-track { height: 5px; margin-top: 9px; overflow: hidden; background: #294152; border-radius: 9px; }
+    .progress-bar { width: 14%; height: 100%; background: var(--mint-bright); border-radius: inherit; }
+
+    main { min-width: 0; }
+    .intro {
+      position: relative;
+      overflow: hidden;
+      padding: 58px clamp(24px, 6vw, 84px) 52px;
+      color: #effcf9;
+      background: var(--ink-2);
+    }
+    .intro::after {
+      content: "";
+      position: absolute;
+      right: -12%;
+      bottom: -160px;
+      width: 520px;
+      height: 320px;
+      border: 1px solid rgba(77,227,193,.2);
+      border-radius: 50%;
+      box-shadow: 0 0 0 46px rgba(77,227,193,.04), 0 0 0 92px rgba(77,227,193,.025);
+      transform: rotate(-10deg);
+    }
+    .eyebrow { margin: 0 0 12px; color: var(--mint-bright); font-size: .78rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+    h1 { max-width: 850px; margin: 0; font-size: clamp(2.25rem, 5vw, 4.5rem); line-height: 1.03; letter-spacing: -.055em; }
+    .lead { max-width: 720px; margin: 22px 0 30px; color: #b9cbd1; font-size: 1.05rem; }
+    .intro-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr); gap: 34px; align-items: end; }
+    .start-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .primary-btn, .ghost-btn {
+      min-height: 46px;
+      padding: 10px 17px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font-weight: 750;
+      text-decoration: none;
+    }
+    .primary-btn { color: #06251e; background: var(--mint-bright); }
+    .primary-btn:hover { background: #78ecd3; }
+    .ghost-btn { color: #d8e8e5; background: transparent; border-color: #3a5363; }
+    .ghost-btn:hover { border-color: #70909f; }
+
+    .snapshot { padding: 20px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.1); border-radius: var(--radius); }
+    .snapshot-title { margin: 0 0 15px; color: #93aab4; font-size: .78rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .snapshot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .snapshot strong { display: block; color: #fff; font-size: 1.28rem; letter-spacing: -.04em; }
+    .snapshot span { color: #8ea5af; font-size: .76rem; }
+
+    .content { max-width: 1180px; margin: 0 auto; padding: 54px clamp(22px, 5vw, 64px) 120px; }
+    .section { scroll-margin-top: 88px; margin-bottom: 64px; }
+    .section-kicker { color: var(--mint); font-size: .78rem; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }
+    h2 { margin: 6px 0 12px; font-size: clamp(1.75rem, 3vw, 2.55rem); line-height: 1.15; letter-spacing: -.04em; }
+    .section-intro { max-width: 760px; margin: 0 0 27px; color: var(--muted); }
+
+    .concept-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .concept-card { min-height: 178px; padding: 22px; background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(13,42,52,.04); }
+    .concept-card .index { color: var(--mint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; font-weight: 800; }
+    .concept-card h3 { margin: 14px 0 7px; font-size: 1.06rem; }
+    .concept-card p { margin: 0; color: var(--muted); font-size: .91rem; }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(7, auto);
+      gap: 10px;
+      align-items: center;
+      margin-top: 18px;
+      padding: 19px;
+      background: #0e1e2d;
+      border-radius: var(--radius);
+      color: #dce9ec;
+      overflow-x: auto;
+    }
+    .pipe-node { min-width: 118px; padding: 15px 13px; border: 1px solid #2b4658; border-radius: 12px; background: #132a3b; text-align: center; }
+    .pipe-node strong { display: block; color: #fff; font-size: .9rem; }
+    .pipe-node span { color: #86a1ad; font-size: .75rem; }
+    .pipe-arrow { color: var(--mint-bright); font-weight: 900; }
+
+    .coming { padding: 30px; background: #e9efed; border: 1px dashed #a9b9b6; border-radius: var(--radius); color: #53666d; text-align: center; }
+
+    .card {
+      padding: 24px;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(13,42,52,.04);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 1.08rem; letter-spacing: -.02em; }
+    .card > p { margin: 0; color: var(--muted); }
+    .callout { padding: 16px 18px; border-left: 4px solid var(--mint); border-radius: 0 12px 12px 0; background: #e6f7f2; color: #31534d; }
+    .callout.warning { border-color: var(--amber); background: #fff4e2; color: #654a28; }
+    .callout strong { color: var(--ink); }
+    .code-shell { position: relative; margin-top: 18px; overflow: hidden; color: #d8e5e8; background: #0c1a27; border: 1px solid #20394a; border-radius: 14px; }
+    .code-label { padding: 8px 14px; color: #78909c; background: #102333; border-bottom: 1px solid #20394a; font: 700 .72rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }
+    pre { margin: 0; padding: 18px; overflow-x: auto; white-space: pre; font: .84rem/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .copy-btn { position: absolute; top: 7px; right: 8px; padding: 5px 10px; color: #b9cbd1; background: #183247; border: 1px solid #2e4b60; border-radius: 8px; font-size: .75rem; }
+    .copy-btn:hover { color: #fff; border-color: #587589; }
+
+    .model-lab { display: grid; grid-template-columns: .92fr 1.08fr; gap: 18px; }
+    .model-options { display: grid; gap: 10px; }
+    .model-option { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 17px 18px; color: var(--ink); text-align: left; background: var(--white); border: 1px solid var(--line); border-radius: 14px; }
+    .model-option:hover { border-color: #82b7aa; }
+    .model-option.selected { color: #fff; background: var(--ink-2); border-color: var(--ink-2); box-shadow: var(--shadow); }
+    .model-option strong { font-size: 1.05rem; }
+    .model-option span { color: var(--muted); font-size: .82rem; }
+    .model-option.selected span { color: #9cb1bb; }
+    .model-option .model-tag { align-self: start; padding: 3px 8px; color: #08725e; background: #dcf8f1; border-radius: 99px; font-size: .7rem; font-weight: 800; }
+    .model-option:not(.selected) .model-tag:empty { display: none; }
+    .model-detail { padding: 28px; color: #eaf4f4; background: var(--ink-2); border-radius: var(--radius); }
+    .model-detail-head { display: flex; justify-content: space-between; align-items: start; gap: 20px; }
+    .model-detail h3 { margin: 0; color: #fff; font-size: 1.45rem; }
+    .model-detail p { margin: 5px 0 0; color: #99afb8; }
+    .model-score { color: var(--mint-bright); font: 800 2rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 28px; }
+    .metric-box { padding: 14px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; }
+    .metric-box strong { display: block; color: #fff; font-size: 1.08rem; }
+    .metric-box span { color: #89a0aa; font-size: .72rem; }
+    .fit-note { margin-top: 16px; padding-top: 15px; color: #bfd0d4; border-top: 1px solid rgba(255,255,255,.1); font-size: .86rem; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .steps { display: grid; gap: 14px; margin: 20px 0 0; padding: 0; list-style: none; counter-reset: lesson; }
+    .steps li { position: relative; min-height: 52px; padding-left: 58px; color: var(--muted); }
+    .steps li::before { counter-increment: lesson; content: counter(lesson); position: absolute; left: 0; top: 0; width: 38px; height: 38px; display: grid; place-items: center; color: #08725e; background: #dcf8f1; border-radius: 10px; font-weight: 850; }
+    .steps strong { display: block; color: var(--ink); }
+
+    .run-panel { color: #e8f4f3; background: var(--ink-2); }
+    .run-panel h3 { color: #fff; }
+    .run-panel > p { color: #9db0b8; }
+    .run-badges { display: flex; flex-wrap: wrap; gap: 7px; margin: 16px 0 20px; }
+    .run-badge { padding: 5px 9px; color: #a9bbbF; border: 1px solid #345064; border-radius: 99px; font-size: .75rem; }
+    .chart-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+    .chart-tab { padding: 6px 10px; color: #91a7b0; background: transparent; border: 1px solid #365264; border-radius: 8px; font-size: .78rem; }
+    .chart-tab.active { color: #08231e; background: var(--mint-bright); border-color: var(--mint-bright); font-weight: 800; }
+    .chart-wrap { padding: 12px 12px 6px; background: #0a1824; border-radius: 12px; }
+    .chart-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .chart-grid { stroke: #284052; stroke-width: 1; }
+    .chart-axis { fill: #7e98a4; font-size: 11px; }
+    .chart-line { fill: none; stroke: var(--mint-bright); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-dot { fill: var(--ink-2); stroke: var(--mint-bright); stroke-width: 3; }
+    .chart-value { fill: #d8e7e8; font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .chart-caption { margin: 10px 2px 0; color: #819aa5; font-size: .76rem; }
+
+    .tuner { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(320px, 1.2fr); gap: 18px; }
+    .control-list { display: grid; gap: 18px; }
+    .control-row { display: grid; gap: 7px; }
+    .control-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    .control-head label { font-weight: 750; }
+    .control-value { color: #08735f; font: 750 .84rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    input[type="range"] { width: 100%; accent-color: var(--mint); }
+    select { width: 100%; min-height: 42px; padding: 8px 11px; color: var(--ink); background: #fff; border: 1px solid #bac9c6; border-radius: 10px; }
+    .switch-row { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
+    .switch-row label { font-weight: 700; }
+    .switch-row small { display: block; color: var(--muted); }
+    input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--mint); }
+    .tuner-output { display: flex; flex-direction: column; }
+    .output-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
+    .output-metric { padding: 14px; background: #eef4f2; border-radius: 12px; }
+    .output-metric strong { display: block; font-size: 1.25rem; letter-spacing: -.03em; }
+    .output-metric span { color: var(--muted); font-size: .74rem; }
+    .advice { margin-top: auto; padding: 14px 16px; color: #31534d; background: #e6f7f2; border-radius: 12px; font-size: .88rem; }
+
+    .inference-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 18px; }
+    .audio-lab { overflow: hidden; padding: 0; }
+    .audio-head { padding: 22px 24px 16px; }
+    .audio-head h3 { margin: 0 0 5px; }
+    .audio-head p { margin: 0; color: var(--muted); font-size: .88rem; }
+    .wave-shell { position: relative; height: 144px; padding: 12px 16px; background: var(--ink-2); }
+    #waveform { width: 100%; height: 100%; display: block; }
+    .wave-time { position: absolute; right: 16px; bottom: 10px; color: #8ca3ad; font: .73rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .audio-controls { padding: 16px 20px 21px; }
+    audio { width: 100%; height: 40px; }
+    .run-infer { width: 100%; margin-top: 13px; min-height: 46px; color: #06251e; background: var(--mint-bright); border: 0; border-radius: 11px; font-weight: 820; }
+    .run-infer:disabled { cursor: wait; opacity: .7; }
+    .infer-stage-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin: 17px 0; }
+    .infer-stage { padding: 9px 6px; color: #73858d; background: #edf2f1; border-radius: 9px; text-align: center; font-size: .72rem; transition: .25s ease; }
+    .infer-stage.active { color: #075f50; background: #d8f7ee; box-shadow: inset 0 0 0 1px #7bdac4; }
+    .transcript { min-height: 128px; padding: 18px; background: #f3f7f6; border: 1px solid var(--line); border-radius: 13px; }
+    .transcript-label { color: var(--muted); font-size: .74rem; font-weight: 780; letter-spacing: .08em; text-transform: uppercase; }
+    .transcript-text { margin: 8px 0 0; font-size: 1.02rem; line-height: 1.75; }
+    .cursor::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.15em; background: var(--mint); animation: blink .8s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .bench-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
+    .bench-chart { display: grid; gap: 16px; margin-top: 22px; }
+    .bench-row { display: grid; grid-template-columns: 145px 1fr 76px; gap: 12px; align-items: center; }
+    .bench-label { font-size: .86rem; font-weight: 720; }
+    .bench-track { height: 14px; background: #e5ecea; border-radius: 99px; overflow: hidden; }
+    .bench-fill { height: 100%; width: var(--bar); background: var(--color, var(--mint)); border-radius: inherit; transform-origin: left; animation: grow .8s ease both; }
+    .bench-value { text-align: right; font: 800 .83rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    @keyframes grow { from { transform: scaleX(0); } }
+    .decision { display: grid; gap: 10px; margin-top: 18px; }
+    .decision-row { display: grid; grid-template-columns: 80px 1fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+    .decision-row strong { font-size: .87rem; }
+    .decision-row span { color: var(--muted); font-size: .85rem; }
+    .big-stat { padding: 22px; color: #e7f3f2; background: var(--ink-2); border-radius: 14px; }
+    .big-stat strong { display: block; color: var(--mint-bright); font-size: 2.25rem; line-height: 1; letter-spacing: -.055em; }
+    .big-stat span { color: #98adb6; font-size: .82rem; }
+    .size-compare { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; margin-top: 12px; }
+    .size-box { padding: 16px 10px; text-align: center; background: #eef4f2; border-radius: 12px; }
+    .size-box strong { display: block; font-size: 1.2rem; }
+    .size-box span { color: var(--muted); font-size: .73rem; }
+
+    .demo-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; }
+    .compare-text { display: grid; gap: 12px; margin-top: 16px; }
+    .compare-block { padding: 15px; border: 1px solid var(--line); border-radius: 12px; }
+    .compare-block strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: .74rem; letter-spacing: .07em; text-transform: uppercase; }
+    .compare-block p { margin: 0; }
+    .wer-result { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .wer-result strong { font-size: 2.1rem; line-height: 1; letter-spacing: -.05em; }
+    .wer-result span { color: var(--muted); font-size: .78rem; }
+    .edit-btn { padding: 8px 11px; color: #075f50; background: #dcf8f1; border: 1px solid #9bdccc; border-radius: 9px; font-weight: 750; }
+    textarea { width: 100%; min-height: 82px; margin-top: 8px; padding: 11px; resize: vertical; color: var(--ink); background: #f8faf9; border: 1px solid #b9c8c5; border-radius: 10px; line-height: 1.5; }
+    .checklist { display: grid; gap: 11px; margin: 17px 0 22px; }
+    .check-item { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; }
+    .check-icon { width: 22px; height: 22px; display: grid; place-items: center; color: #066c59; background: #d9f7ef; border-radius: 50%; font-size: .72rem; font-weight: 900; }
+    .finish-btn { width: 100%; min-height: 48px; color: #fff; background: var(--ink-2); border: 0; border-radius: 12px; font-weight: 800; }
+    .finish-btn.done { color: #06382e; background: var(--mint-bright); }
+    .source-note { margin-top: 20px; color: var(--muted); font-size: .78rem; }
+
+    .footer { padding: 28px clamp(22px, 5vw, 64px); color: #91a5ae; background: var(--ink); text-align: center; font-size: .8rem; }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; padding: 13px 18px; overflow-x: auto; }
+      .side-label, .side-progress { display: none; }
+      .lesson-nav { display: flex; min-width: max-content; }
+      .lesson-nav a { grid-template-columns: 24px 1fr; padding: 8px 10px; }
+      .intro-grid { grid-template-columns: 1fr; }
+      .concept-grid { grid-template-columns: 1fr; }
+      .model-lab, .two-col, .tuner, .inference-grid, .bench-grid, .demo-grid { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .topbar { padding: 0 16px; }
+      .brand span:last-child { display: none; }
+      .env-badge { font-size: .72rem; }
+      .intro { padding: 42px 20px 38px; }
+      .content { padding-inline: 18px; }
+      .snapshot-grid { grid-template-columns: 1fr; }
+      .start-actions a { width: 100%; text-align: center; }
+      .output-metrics { grid-template-columns: 1fr; }
+      .infer-stage-list { grid-template-columns: repeat(2, 1fr); }
+      .bench-row { grid-template-columns: 100px 1fr 65px; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 24"><path d="M1 13h4l2-8 3 16 3-20 3 22 3-17 3 11 2-4h7" fill="none" stroke="#4de3c1" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Whisper ASR · 实战课</span>
+    </div>
+    <span class="env-badge">Apple M5 · 24GB 实测</span>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="课程导航">
+      <p class="side-label">学习路径</p>
+      <nav class="lesson-nav">
+        <a class="active" href="#concepts"><span class="nav-num">01</span><span>基本概念</span></a>
+        <a href="#models"><span class="nav-num">02</span><span>模型与参数</span></a>
+        <a href="#training"><span class="nav-num">03</span><span>训练流程</span></a>
+        <a href="#tuning"><span class="nav-num">04</span><span>调参实验</span></a>
+        <a href="#inference"><span class="nav-num">05</span><span>推理实战</span></a>
+        <a href="#optimization"><span class="nav-num">06</span><span>性能优化</span></a>
+        <a href="#demo"><span class="nav-num">07</span><span>效果演示</span></a>
+      </nav>
+      <div class="side-progress">
+        <div class="progress-meta"><span>课程进度</span><span>1 / 7</span></div>
+        <div class="progress-track"><div class="progress-bar"></div></div>
+      </div>
+    </aside>
+
+    <main>
+      <section class="intro">
+        <div class="intro-grid">
+          <div>
+            <p class="eyebrow">从音频到文本 · 一步一步</p>
+            <h1>真正理解并跑通 Whisper</h1>
+            <p class="lead">不是把命令复制一遍，而是看懂数据怎样进入模型、参数怎样影响训练，以及为什么“模型更小”有时反而更慢。</p>
+            <div class="start-actions">
+              <a class="primary-btn" href="#concepts">开始第 1 步</a>
+              <a class="ghost-btn" href="#demo">先看实际效果</a>
+            </div>
+          </div>
+          <div class="snapshot" aria-label="本机实测摘要">
+            <p class="snapshot-title">本机真实运行摘要</p>
+            <div class="snapshot-grid">
+              <div><strong>64.1ms</strong><span>MPS 解码</span></div>
+              <div><strong>39M</strong><span>tiny 参数量</span></div>
+              <div><strong>29.6M</strong><span>冻结后可训练</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="content">
+        <section class="section" id="concepts">
+          <span class="section-kicker">Step 01 · Concepts</span>
+          <h2>先建立正确的心智模型</h2>
+          <p class="section-intro">Whisper 是 Encoder–Decoder Transformer。训练时可以并行学习整段标签，推理时却必须逐 token 生成，这个差异决定了它的性能特征。</p>
+          <div class="concept-grid">
+            <article class="concept-card"><span class="index">INPUT</span><h3>16kHz 音频</h3><p>统一采样率和声道，切成最多 30 秒的窗口，再转换为 80 维 Log-Mel 频谱。</p></article>
+            <article class="concept-card"><span class="index">ENCODER</span><h3>理解“听到了什么”</h3><p>卷积和 Transformer 把时频特征编码为上下文表示，训练时可整体并行。</p></article>
+            <article class="concept-card"><span class="index">DECODER</span><h3>一个 token 一个 token 写</h3><p>结合声学表示与已生成文本预测下一个 token，因此解码通常是延迟瓶颈。</p></article>
+          </div>
+          <div class="pipeline" aria-label="Whisper 处理流程">
+            <div class="pipe-node"><strong>Waveform</strong><span>16kHz mono</span></div><span class="pipe-arrow">→</span>
+            <div class="pipe-node"><strong>Log-Mel</strong><span>80 × 3000</span></div><span class="pipe-arrow">→</span>
+            <div class="pipe-node"><strong>Encoder</strong><span>声学表征</span></div><span class="pipe-arrow">→</span>
+            <div class="pipe-node"><strong>Decoder</strong><span>自回归文本</span></div>
+          </div>
+        </section>
+
+        <section class="section" id="models">
+          <span class="section-kicker">Step 02 · Model & parameters</span>
+          <h2>模型越大，不等于当前任务越合适</h2>
+          <p class="section-intro">先用 tiny 验证数据和训练链路，再决定是否扩大模型。点击下面的模型，观察架构和 M5 建议怎样变化。</p>
+          <div class="model-lab">
+            <div class="model-options" role="tablist" aria-label="Whisper 模型选择">
+              <button class="model-option selected" data-model="tiny" role="tab" aria-selected="true"><span><strong>Whisper tiny</strong><br><span>最快的流程验证</span></span><span class="model-tag">推荐起点</span></button>
+              <button class="model-option" data-model="base" role="tab" aria-selected="false"><span><strong>Whisper base</strong><br><span>速度与效果折中</span></span><span class="model-tag"></span></button>
+              <button class="model-option" data-model="small" role="tab" aria-selected="false"><span><strong>Whisper small</strong><br><span>更高容量，更慢解码</span></span><span class="model-tag"></span></button>
+            </div>
+            <div class="model-detail" aria-live="polite">
+              <div class="model-detail-head">
+                <div><h3 id="modelName">Whisper tiny</h3><p id="modelUse">学习流程、快速调参、冒烟测试</p></div>
+                <div class="model-score" id="modelParams">39M</div>
+              </div>
+              <div class="metric-grid">
+                <div class="metric-box"><strong id="modelLayers">4</strong><span>Encoder / Decoder 层</span></div>
+                <div class="metric-box"><strong id="modelWidth">384</strong><span>隐藏维度</span></div>
+                <div class="metric-box"><strong id="modelHeads">6</strong><span>Attention heads</span></div>
+                <div class="metric-box"><strong id="modelBatch">2–4</strong><span>M5 建议 batch</span></div>
+              </div>
+              <div class="fit-note" id="modelNote">tiny 的 FP32 state_dict 本机实测约 151.1MB；默认冻结 Encoder 后有 29.6M 可训练参数。</div>
+            </div>
+          </div>
+          <div class="callout warning" style="margin-top:18px"><strong>内存判断：</strong>参数权重只是训练内存的一部分。激活、梯度和 AdamW 状态通常占得更多；24GB 统一内存还要与系统共享。</div>
+        </section>
+
+        <section class="section" id="training">
+          <span class="section-kicker">Step 03 · Training</span>
+          <h2>把一次微调拆成五个可验证环节</h2>
+          <p class="section-intro">当前工程默认冻结 Encoder、训练 Decoder。它不是 LoRA：Decoder 原始参数仍然直接更新，代码没有插入低秩 Adapter。</p>
+          <div class="two-col">
+            <article class="card">
+              <h3>数据怎样变成 loss</h3>
+              <ol class="steps">
+                <li><strong>音频统一</strong>转成单声道 16kHz，避免采样率造成时间轴错误。</li>
+                <li><strong>特征提取</strong>WhisperProcessor 生成 Log-Mel 和 attention mask。</li>
+                <li><strong>文本编码</strong>Tokenizer 把转写变成 token ids。</li>
+                <li><strong>Padding 屏蔽</strong>标签 padding 替换为 -100，不参与交叉熵。</li>
+                <li><strong>Teacher forcing</strong>用正确历史 token 学习下一个 token。</li>
+              </ol>
+            </article>
+            <article class="card run-panel">
+              <h3>M5 实际训练记录</h3>
+              <p>这组实验刚刚由仓库脚本运行，用来展示流程和曲线，不作为精度结论。</p>
+              <div class="run-badges"><span class="run-badge">tiny</span><span class="run-badge">32 train / 8 eval</span><span class="run-badge">batch 2 × accum 2</span><span class="run-badge">Encoder 冻结</span><span class="run-badge">24 steps</span></div>
+              <div class="chart-tabs" role="tablist" aria-label="训练指标">
+                <button class="chart-tab active" data-chart="loss" role="tab" aria-selected="true">Eval loss</button>
+                <button class="chart-tab" data-chart="wer" role="tab" aria-selected="false">WER</button>
+              </div>
+              <div class="chart-wrap">
+                <svg id="trainingChart" viewBox="0 0 430 210" role="img" aria-label="三个 epoch 的验证曲线">
+                  <line class="chart-grid" x1="48" y1="32" x2="414" y2="32"/><line class="chart-grid" x1="48" y1="92" x2="414" y2="92"/><line class="chart-grid" x1="48" y1="152" x2="414" y2="152"/>
+                  <line class="chart-grid" x1="48" y1="176" x2="414" y2="176"/>
+                  <text class="chart-axis" x="90" y="198">Epoch 1</text><text class="chart-axis" x="216" y="198">Epoch 2</text><text class="chart-axis" x="342" y="198">Epoch 3</text>
+                  <polyline id="metricLine" class="chart-line" points="108,43 234,123 360,148"/>
+                  <g id="metricDots"></g>
+                </svg>
+                <p class="chart-caption" id="chartCaption">Eval loss：3.126 → 2.787 → 2.684，说明优化目标在下降。</p>
+              </div>
+            </article>
+          </div>
+          <div class="code-shell">
+            <div class="code-label">第一次真实训练</div><button class="copy-btn" data-copy="trainCommand">复制</button>
+            <pre><code id="trainCommand">uv run python -m whisper_asr.train_finetune \
+  --model tiny \
+  --epochs 3 \
+  --train-samples 160 \
+  --eval-samples 40 \
+  --batch 2 \
+  --grad-accum 4 \
+  --lr 1e-5 \
+  --warmup-ratio 0.05 \
+  --output runs/whisper-tiny-frozen</code></pre>
+          </div>
+          <div class="callout warning" style="margin-top:18px"><strong>怎样读这条曲线：</strong>loss 确实下降，但 8 条验证样本上的 WER 三轮都为 72.7%。验证集太小且训练太短，所以只能证明链路可工作，不能宣称模型已经变好。</div>
+        </section>
+
+        <section class="section" id="tuning">
+          <span class="section-kicker">Step 04 · Tuning lab</span>
+          <h2>动手组合参数，看清它们的关系</h2>
+          <p class="section-intro">这个实验台不会在浏览器中训练模型，而是把选择转换为仓库可以直接执行的命令，并给出等效 batch 和更新步数。</p>
+          <div class="tuner">
+            <div class="card control-list">
+              <div class="control-row"><div class="control-head"><label for="tuneModel">模型</label></div><select id="tuneModel"><option value="tiny">tiny</option><option value="base">base</option><option value="small">small</option></select></div>
+              <div class="control-row"><div class="control-head"><label for="trainSamples">训练样本</label><span class="control-value" id="trainSamplesValue">160</span></div><input id="trainSamples" type="range" min="32" max="512" step="32" value="160"></div>
+              <div class="control-row"><div class="control-head"><label for="batch">Device batch</label><span class="control-value" id="batchValue">2</span></div><input id="batch" type="range" min="1" max="4" step="1" value="2"></div>
+              <div class="control-row"><div class="control-head"><label for="epochs">Epochs</label><span class="control-value" id="epochsValue">3</span></div><input id="epochs" type="range" min="1" max="8" step="1" value="3"></div>
+              <div class="control-row"><div class="control-head"><label for="gradAccum">梯度累积</label></div><select id="gradAccum"><option>1</option><option>2</option><option selected>4</option><option>8</option><option>16</option></select></div>
+              <div class="control-row"><div class="control-head"><label for="learningRate">学习率</label></div><select id="learningRate"><option value="0.000001">1e-6</option><option value="0.000003">3e-6</option><option value="0.00001" selected>1e-5</option><option value="0.00003">3e-5</option></select></div>
+              <div class="switch-row"><span><label for="trainEncoder">解冻 Encoder</label><small>声学域差异大时再考虑</small></span><input id="trainEncoder" type="checkbox"></div>
+              <div class="switch-row"><span><label for="checkpointing">梯度检查点</label><small>用计算时间换激活内存</small></span><input id="checkpointing" type="checkbox"></div>
+            </div>
+            <div class="card tuner-output">
+              <h3>当前实验配置</h3>
+              <p>所有值都是训练前的容量估算；真实峰值内存和速度仍需在 M5 上测量。</p>
+              <div class="output-metrics">
+                <div class="output-metric"><strong id="effectiveBatch">8</strong><span>等效 batch</span></div>
+                <div class="output-metric"><strong id="stepsPerEpoch">20</strong><span>每 epoch 更新</span></div>
+                <div class="output-metric"><strong id="totalUpdates">60</strong><span>总更新步数</span></div>
+              </div>
+              <div class="code-shell">
+                <div class="code-label">自动生成命令</div><button class="copy-btn" data-copy="tuneCommand">复制</button>
+                <pre><code id="tuneCommand"></code></pre>
+              </div>
+              <div class="advice" id="tuneAdvice">tiny + 冻结 Encoder 是 M5 24GB 上最稳妥的起点。</div>
+            </div>
+          </div>
+        </section>
+        <section class="section" id="inference">
+          <span class="section-kicker">Step 05 · Inference</span>
+          <h2>听一段音频，理解一次转写</h2>
+          <p class="section-intro">Whisper 先把整段声音编码，再由 Decoder 逐个生成 token。下面是 JFK 11 秒样例及本机 MPS 已验证的转写结果；“回放”只演示链路节奏，不会在浏览器中下载或运行模型。</p>
+          <div class="inference-grid">
+            <article class="card audio-lab">
+              <div class="audio-head"><h3>JFK 样例音频</h3><p>11 秒 · 16kHz · 单声道 · 英文</p></div>
+              <div class="wave-shell"><canvas id="waveform" aria-label="JFK 示例音频波形"></canvas><span class="wave-time">00:11.0</span></div>
+              <div class="audio-controls"><audio id="sampleAudio" controls preload="metadata" src="assets/jfk.mp3">你的浏览器不支持音频播放。</audio><button class="run-infer" id="runInfer" type="button">回放 MPS 推理链路</button></div>
+            </article>
+            <article class="card">
+              <h3>从声音到句子</h3>
+              <p>真正的生成有串行依赖：前一个 token 会成为下一个 token 的上下文。</p>
+              <div class="infer-stage-list" aria-label="推理阶段">
+                <div class="infer-stage" data-stage="0">Log-Mel</div><div class="infer-stage" data-stage="1">Encoder</div><div class="infer-stage" data-stage="2">Decode</div><div class="infer-stage" data-stage="3">Text</div>
+              </div>
+              <div class="transcript" aria-live="polite">
+                <div class="transcript-label" id="transcriptLabel">已验证的转写</div>
+                <p class="transcript-text" id="transcriptText">And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.</p>
+              </div>
+              <div class="callout" style="margin-top:18px"><strong>部署提示：</strong>已知语言时显式传入 <code>--language en</code> 或 <code>--language zh</code>；短音频可先把 <code>--max-new-tokens</code> 控制在 64–128，避免无意义的长解码。</div>
+            </article>
+          </div>
+          <div class="code-shell">
+            <div class="code-label">用自己的音频推理</div><button class="copy-btn" data-copy="inferCommand">复制</button>
+            <pre><code id="inferCommand">uv run python -m whisper_asr.infer \
+  --model tiny \
+  --audio /绝对路径/example.wav \
+  --language en \
+  --device mps \
+  --max-new-tokens 128</code></pre>
+          </div>
+        </section>
+
+        <section class="section" id="optimization">
+          <span class="section-kicker">Step 06 · Optimization</span>
+          <h2>模型文件变小，不代表端到端更快</h2>
+          <p class="section-intro">以下是 M5 冒烟测试：同一个 tiny 模型、11 秒 JFK 音频、生成 5 个 token、每条路线各测 1 次。它适合帮助判断方向，不是跨设备性能承诺。</p>
+          <div class="bench-grid">
+            <article class="card">
+              <h3>端到端延迟（越短越好）</h3>
+              <div class="bench-chart" aria-label="Whisper tiny 延迟对比">
+                <div class="bench-row"><span class="bench-label">CPU FP32</span><div class="bench-track"><div class="bench-fill" style="--bar:52.4%;--color:#5c8df6"></div></div><span class="bench-value">125.67ms</span></div>
+                <div class="bench-row"><span class="bench-label">CPU dynamic int8</span><div class="bench-track"><div class="bench-fill" style="--bar:91.1%;--color:#f2aa4c"></div></div><span class="bench-value">218.52ms</span></div>
+                <div class="bench-row"><span class="bench-label">MPS FP32</span><div class="bench-track"><div class="bench-fill" style="--bar:26.7%;--color:#16b899"></div></div><span class="bench-value">64.11ms</span></div>
+              </div>
+              <p class="source-note">计时前后同步 MPS；完整评测还应记录 warmup、mean、p50、p95、峰值内存与真实验证集 WER。</p>
+            </article>
+            <article class="card">
+              <h3>该怎样做选择</h3>
+              <div class="big-stat"><strong>1.96×</strong><span>MPS FP32 相比此轮 CPU FP32 的速度比</span></div>
+              <div class="size-compare"><div class="size-box"><strong>151.1MB</strong><span>FP32 state_dict</span></div><span aria-hidden="true">→</span><div class="size-box"><strong>121.8MB</strong><span>dynamic int8</span></div></div>
+              <div class="decision">
+                <div class="decision-row"><strong>想要最低延迟</strong><span>优先尝试 MPS FP32，并保持解码策略和输入一致后复测。</span></div>
+                <div class="decision-row"><strong>想要更小权重</strong><span>动态 int8 是候选项，但本次短序列推理反而更慢。</span></div>
+                <div class="decision-row"><strong>想试 compile</strong><span>把首次编译时间与稳定推理时间分开记录；自回归生成可能发生图断裂。</span></div>
+              </div>
+            </article>
+          </div>
+          <div class="code-shell">
+            <div class="code-label">公平性能对比</div><button class="copy-btn" data-copy="benchmarkCommand">复制</button>
+            <pre><code id="benchmarkCommand">uv run python -m whisper_asr.optimize \
+  --model tiny \
+  --runs 20 \
+  --max-new-tokens 20 \
+  --skip-compile</code></pre>
+          </div>
+        </section>
+
+        <section class="section" id="demo">
+          <span class="section-kicker">Step 07 · Evaluate</span>
+          <h2>不要只看“它能说话”，要计算错误</h2>
+          <p class="section-intro">英文通常看 WER。下面可直接改写参考文本和预测文本，观察替换、删除与插入怎样组成错误率。计算前会忽略大小写和常见标点，方便比较内容本身。</p>
+          <div class="demo-grid">
+            <article class="card">
+              <h3>可编辑的 WER 对比</h3>
+              <div class="compare-text">
+                <div class="compare-block"><strong>参考文本 Reference</strong><p id="referenceView">And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.</p><textarea id="referenceInput" hidden aria-label="参考文本">And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.</textarea></div>
+                <div class="compare-block"><strong>模型预测 Hypothesis</strong><p id="hypothesisView">And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.</p><textarea id="hypothesisInput" hidden aria-label="模型预测文本">And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.</textarea></div>
+              </div>
+              <div class="wer-result"><div><span>当前 WER</span><strong id="werResult">0.0%</strong><span id="werBreakdown">0 替换 · 0 删除 · 0 插入</span></div><button class="edit-btn" id="editTranscript" type="button">编辑文本</button></div>
+            </article>
+            <article class="card">
+              <h3>完成一次可复现实验</h3>
+              <p>能运行只是开始。每次比较都把模型、输入、参数和结果一起留下来。</p>
+              <div class="checklist">
+                <div class="check-item"><span class="check-icon">1</span><span>固定一组未参与训练的测试音频。</span></div>
+                <div class="check-item"><span class="check-icon">2</span><span>统一语言、解码策略和 <code>max-new-tokens</code>。</span></div>
+                <div class="check-item"><span class="check-icon">3</span><span>同时记录 WER、延迟、模型大小和输出样例。</span></div>
+                <div class="check-item"><span class="check-icon">4</span><span>把结论写入实验记录，而不是只保留终端截图。</span></div>
+              </div>
+              <button class="finish-btn" id="finishLesson" type="button">标记为已完成</button>
+              <p class="source-note">页面中的性能数字来自 <code>docs/VALIDATION_M5.md</code>；训练曲线仅用于说明链路，不能当作最终精度结论。</p>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script>
+    (() => {
+      const modelData = {
+        tiny: { name: "Whisper tiny", use: "学习流程、快速调参、冒烟测试", params: "39M", layers: "4", width: "384", heads: "6", batch: "2–4", note: "tiny 的 FP32 state_dict 本机实测约 151.1MB；默认冻结 Encoder 后有 29.6M 可训练参数。" },
+        base: { name: "Whisper base", use: "速度与效果折中，适合完成链路验证后升级", params: "74M", layers: "6", width: "512", heads: "8", batch: "1–2", note: "base 提升容量，也会增加统一内存压力和自回归解码时间；先用 tiny 验证数据与评估。" },
+        small: { name: "Whisper small", use: "更重视效果时的下一步，需要更保守的训练配置", params: "244M", layers: "12", width: "768", heads: "12", batch: "1", note: "small 适合在目标数据、验证集和优化策略都已确认后使用；M5 24GB 上建议小 batch 并观察 swap。" }
+      };
+
+      const byId = (id) => document.getElementById(id);
+      const setText = (id, value) => { byId(id).textContent = value; };
+
+      document.querySelectorAll(".model-option").forEach((button) => {
+        button.addEventListener("click", () => {
+          const data = modelData[button.dataset.model];
+          document.querySelectorAll(".model-option").forEach((item) => { item.classList.toggle("selected", item === button); item.setAttribute("aria-selected", item === button ? "true" : "false"); });
+          setText("modelName", data.name); setText("modelUse", data.use); setText("modelParams", data.params);
+          setText("modelLayers", data.layers); setText("modelWidth", data.width); setText("modelHeads", data.heads); setText("modelBatch", data.batch); setText("modelNote", data.note);
+        });
+      });
+
+      const chartData = {
+        loss: { values: [3.126, 2.787, 2.684], min: 2.6, max: 3.2, caption: "Eval loss：3.126 → 2.787 → 2.684，说明优化目标在下降。" },
+        wer: { values: [72.7, 72.7, 72.7], min: 68, max: 76, caption: "WER：72.7% → 72.7% → 72.7%。验证集只有 8 条且训练很短，不能用它宣称识别效果提升。" }
+      };
+      const drawChart = (key) => {
+        const data = chartData[key], xs = [108, 234, 360];
+        const points = data.values.map((value, index) => `${xs[index]},${(152 - ((value - data.min) / (data.max - data.min)) * 112).toFixed(1)}`);
+        byId("metricLine").setAttribute("points", points.join(" "));
+        byId("metricDots").innerHTML = data.values.map((value, index) => { const [x, y] = points[index].split(","); return `<circle class="chart-dot" cx="${x}" cy="${y}" r="5"></circle><text class="chart-value" x="${Number(x) - 17}" y="${Number(y) - 12}">${key === "wer" ? value + "%" : value.toFixed(3)}</text>`; }).join("");
+        setText("chartCaption", data.caption);
+      };
+      drawChart("loss");
+      document.querySelectorAll(".chart-tab").forEach((button) => button.addEventListener("click", () => {
+        document.querySelectorAll(".chart-tab").forEach((item) => { item.classList.toggle("active", item === button); item.setAttribute("aria-selected", item === button ? "true" : "false"); });
+        drawChart(button.dataset.chart);
+      }));
+
+      const tuner = ["tuneModel", "trainSamples", "batch", "epochs", "gradAccum", "learningRate", "trainEncoder", "checkpointing"].map(byId);
+      const updateTuner = () => {
+        const model = byId("tuneModel").value, samples = Number(byId("trainSamples").value), batch = Number(byId("batch").value), epochs = Number(byId("epochs").value), accum = Number(byId("gradAccum").value), lr = Number(byId("learningRate").value), trainEncoder = byId("trainEncoder").checked, checkpointing = byId("checkpointing").checked;
+        const effective = batch * accum, perEpoch = Math.ceil(samples / effective), updates = perEpoch * epochs;
+        setText("trainSamplesValue", samples); setText("batchValue", batch); setText("epochsValue", epochs); setText("effectiveBatch", effective); setText("stepsPerEpoch", perEpoch); setText("totalUpdates", updates);
+        const command = ["uv run python -m whisper_asr.train_finetune", `  --model ${model}`, `  --epochs ${epochs}`, `  --train-samples ${samples}`, `  --eval-samples ${Math.max(8, Math.round(samples / 4))}`, `  --batch ${batch}`, `  --grad-accum ${accum}`, `  --lr ${lr.toExponential(0).replace("e-", "e-")}`, "  --warmup-ratio 0.05", "  --seed 42", `  --output runs/whisper-${model}-lab`];
+        if (trainEncoder) command.splice(2, 0, "  --train_encoder");
+        if (checkpointing) command.splice(2, 0, "  --gradient-checkpointing");
+        byId("tuneCommand").textContent = command.join(" \\\n");
+        let advice = `${model} + ${trainEncoder ? "训练 Encoder" : "冻结 Encoder"}：`;
+        if (trainEncoder) advice += "先用较低学习率（建议 1e-6～1e-5），并监控内存与验证 WER。";
+        else if (model === "small" || checkpointing) advice += "模型更大或启用检查点时，单步会更慢；这是用计算换内存的正常代价。";
+        else advice += "这是 M5 24GB 上较稳妥的流程验证起点，先确认数据和评估逻辑。";
+        setText("tuneAdvice", advice);
+      };
+      tuner.forEach((control) => control.addEventListener("input", updateTuner)); updateTuner();
+
+      document.querySelectorAll("[data-copy]").forEach((button) => button.addEventListener("click", async () => {
+        const original = button.textContent, value = byId(button.dataset.copy).textContent;
+        try { await navigator.clipboard.writeText(value); button.textContent = "已复制"; } catch { button.textContent = "请手动复制"; }
+        window.setTimeout(() => { button.textContent = original; }, 1400);
+      }));
+
+      const canvas = byId("waveform"), audio = byId("sampleAudio");
+      const drawWave = (values) => {
+        const rect = canvas.getBoundingClientRect(), ratio = window.devicePixelRatio || 1, width = Math.max(1, Math.floor(rect.width * ratio)), height = Math.max(1, Math.floor(rect.height * ratio));
+        canvas.width = width; canvas.height = height; const ctx = canvas.getContext("2d"); ctx.scale(ratio, ratio); const w = rect.width, h = rect.height;
+        ctx.clearRect(0, 0, w, h); ctx.strokeStyle = "rgba(77,227,193,.20)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+        ctx.strokeStyle = "#4de3c1"; ctx.lineWidth = 1.5; ctx.beginPath();
+        for (let x = 0; x < w; x += 2) { const index = Math.floor((x / w) * values.length), amplitude = values[index] || 0.06, y = h / 2 + Math.sin(x * .19) * amplitude * h * .42; x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+        ctx.stroke();
+      };
+      const fallbackWave = Array.from({ length: 260 }, (_, index) => .08 + Math.abs(Math.sin(index * .29) * Math.sin(index * .071)) * (.14 + (index % 37 < 22 ? .62 : .18)));
+      drawWave(fallbackWave); window.addEventListener("resize", () => drawWave(fallbackWave));
+      if (window.AudioContext && location.protocol !== "file:") {
+        fetch(audio.src).then((response) => response.arrayBuffer()).then((buffer) => new AudioContext().decodeAudioData(buffer)).then((decoded) => {
+          const channel = decoded.getChannelData(0), samples = 360, block = Math.max(1, Math.floor(channel.length / samples));
+          drawWave(Array.from({ length: samples }, (_, index) => { let peak = 0; for (let offset = 0; offset < block; offset += 1) peak = Math.max(peak, Math.abs(channel[index * block + offset] || 0)); return peak; }));
+        }).catch(() => {});
+      }
+
+      const replay = byId("runInfer"), transcript = byId("transcriptText"), transcriptLabel = byId("transcriptLabel"), stages = [...document.querySelectorAll(".infer-stage")];
+      const verifiedTranscript = "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.";
+      replay.addEventListener("click", () => {
+        replay.disabled = true; replay.textContent = "正在回放…"; transcript.textContent = ""; transcript.classList.add("cursor"); transcriptLabel.textContent = "链路回放中"; stages.forEach((stage) => stage.classList.remove("active"));
+        [0, 1, 2, 3].forEach((index) => window.setTimeout(() => stages[index].classList.add("active"), index * 420));
+        window.setTimeout(() => { let position = 0; const typer = window.setInterval(() => { transcript.textContent += verifiedTranscript[position] || ""; position += 1; if (position >= verifiedTranscript.length) { window.clearInterval(typer); transcript.classList.remove("cursor"); transcriptLabel.textContent = "已验证的转写"; replay.disabled = false; replay.textContent = "再次回放 MPS 推理链路"; } }, 13); }, 1500);
+      });
+
+      const normalize = (text) => text.toLowerCase().replace(/[^a-z0-9\\s']/g, " ").replace(/\\s+/g, " ").trim().split(" ").filter(Boolean);
+      const calculateWer = () => {
+        const reference = normalize(byId("referenceInput").value), hypothesis = normalize(byId("hypothesisInput").value), rows = reference.length + 1, cols = hypothesis.length + 1;
+        const matrix = Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => i === 0 ? { cost: j, s: 0, d: 0, ins: j } : j === 0 ? { cost: i, s: 0, d: i, ins: 0 } : null));
+        for (let i = 1; i < rows; i += 1) for (let j = 1; j < cols; j += 1) { if (reference[i - 1] === hypothesis[j - 1]) matrix[i][j] = { ...matrix[i - 1][j - 1] }; else { const candidates = [{ ...matrix[i - 1][j - 1], s: matrix[i - 1][j - 1].s + 1 }, { ...matrix[i - 1][j], d: matrix[i - 1][j].d + 1 }, { ...matrix[i][j - 1], ins: matrix[i][j - 1].ins + 1 }]; matrix[i][j] = candidates.reduce((best, item) => item.cost + item.s + item.d + item.ins < best.cost + best.s + best.d + best.ins ? item : best); } }
+        const result = matrix[rows - 1][cols - 1], errors = result.s + result.d + result.ins, rate = reference.length ? errors / reference.length * 100 : 0;
+        setText("werResult", `${rate.toFixed(1)}%`); setText("werBreakdown", `${result.s} 替换 · ${result.d} 删除 · ${result.ins} 插入`);
+      };
+      const editButton = byId("editTranscript"); editButton.addEventListener("click", () => {
+        const editing = byId("referenceInput").hidden; ["reference", "hypothesis"].forEach((prefix) => { byId(`${prefix}Input`).hidden = !editing; byId(`${prefix}View`).hidden = editing; });
+        editButton.textContent = editing ? "完成并计算" : "编辑文本"; if (!editing) { setText("referenceView", byId("referenceInput").value); setText("hypothesisView", byId("hypothesisInput").value); calculateWer(); }
+      });
+      [byId("referenceInput"), byId("hypothesisInput")].forEach((input) => input.addEventListener("input", calculateWer)); calculateWer();
+
+      const lessonSections = [...document.querySelectorAll(".section")], progressMeta = document.querySelector(".progress-meta span:last-child"), progressBar = document.querySelector(".progress-bar");
+      const setLesson = (index) => { document.querySelectorAll(".lesson-nav a").forEach((link, linkIndex) => link.classList.toggle("active", linkIndex === index)); progressMeta.textContent = `${index + 1} / ${lessonSections.length}`; progressBar.style.width = `${(index + 1) / lessonSections.length * 100}%`; };
+      const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) setLesson(lessonSections.indexOf(entry.target)); }), { rootMargin: "-28% 0px -62% 0px", threshold: .01 }); lessonSections.forEach((section) => observer.observe(section));
+
+      const finish = byId("finishLesson"); if (localStorage.getItem("whisper-tutorial-complete") === "true") { finish.classList.add("done"); finish.textContent = "已完成 · 再学一遍"; }
+      finish.addEventListener("click", () => { const done = !finish.classList.contains("done"); finish.classList.toggle("done", done); finish.textContent = done ? "已完成 · 再学一遍" : "标记为已完成"; localStorage.setItem("whisper-tutorial-complete", String(done)); });
+    })();
+  </script>
+</body>
+</html>
