@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="一个可交互的 YOLO11n 目标检测实验台：调整置信度与 NMS，观察检测结果如何变化。">
+  <title>YOLO11n · 动态检测实验室</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b1020'/%3E%3Cpath d='M14 19h12M14 19v12M50 19H38M50 19v12M14 45h12M14 45V33M50 45H38M50 45V33' fill='none' stroke='%23c8ff41' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='5' fill='%23a8ecff'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --ink: #08101d;
+      --ink-2: #101a2d;
+      --panel: #111d31;
+      --panel-2: #16243b;
+      --paper: #f5f7fb;
+      --white: #fff;
+      --line: #dbe2ef;
+      --muted: #65728b;
+      --lime: #c8ff41;
+      --lime-dark: #a9d92f;
+      --cyan: #77dfff;
+      --pink: #ff70ca;
+      --orange: #ffba63;
+      --person: #6da4ff;
+      --shadow: 0 18px 48px rgba(10, 21, 41, .12);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    a { color: inherit; }
+    button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid rgba(119, 223, 255, .75); outline-offset: 3px; }
+
+    .topbar {
+      position: sticky; top: 0; z-index: 30;
+      height: 66px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 clamp(18px, 4vw, 58px); color: #f5faff; background: rgba(8, 16, 29, .94);
+      border-bottom: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(18px);
+    }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 820; letter-spacing: -.025em; text-decoration: none; }
+    .brand-mark { width: 33px; height: 33px; display: grid; place-items: center; border: 1px solid rgba(200,255,65,.48); border-radius: 10px; color: var(--lime); background: #111f2e; }
+    .brand-mark svg { width: 22px; height: 22px; }
+    .brand small { color: #8fa1ba; font-size: .72rem; font-weight: 700; letter-spacing: .1em; }
+    .top-nav { display: flex; gap: 5px; align-items: center; }
+    .top-nav a { padding: 7px 10px; color: #aec0d8; border-radius: 8px; font-size: .85rem; text-decoration: none; }
+    .top-nav a:hover { color: #fff; background: rgba(255,255,255,.08); }
+    .live-pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; color: var(--lime); border: 1px solid rgba(200,255,65,.25); border-radius: 100px; background: rgba(200,255,65,.08); font-size: .75rem; font-weight: 750; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 4px rgba(200,255,65,.12); }
+
+    .hero { overflow: hidden; position: relative; padding: 35px clamp(18px, 5vw, 72px) 24px; color: #f3f8ff; background: var(--ink); }
+    .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .26; background-image: linear-gradient(rgba(119,223,255,.15) 1px, transparent 1px), linear-gradient(90deg, rgba(119,223,255,.15) 1px, transparent 1px); background-size: 38px 38px; mask-image: linear-gradient(to bottom, black, transparent); }
+    .hero-inner { position: relative; max-width: 1440px; margin: 0 auto; }
+    .eyebrow { margin: 0 0 7px; color: var(--lime); font-size: .75rem; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 900px; font-size: clamp(2.25rem, 5vw, 4.25rem); line-height: 1.03; letter-spacing: -.055em; }
+    .hero-subline { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 13px; color: #a7b8cd; }
+    .hero-subline p { margin: 0; max-width: 610px; font-size: 1rem; }
+    .model-meta { display: flex; gap: 7px; }
+    .model-meta span { padding: 4px 8px; color: #c5d4e7; border: 1px solid #2a3a55; border-radius: 6px; font: 700 .73rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .shell { max-width: 1440px; margin: 0 auto; padding: 0 clamp(18px, 5vw, 72px) 92px; }
+    .lab { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1.38fr) minmax(330px, .62fr); gap: 18px; margin-top: -1px; }
+    .vision-card, .control-card { border: 1px solid #263650; border-radius: var(--radius); box-shadow: var(--shadow); }
+    .vision-card { overflow: hidden; color: #edf4fc; background: #0c1525; }
+    .card-head { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #223149; }
+    .card-title { display: flex; align-items: center; gap: 9px; font-size: .84rem; font-weight: 780; }
+    .camera-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 4px rgba(200,255,65,.11); }
+    .frame-count { color: #92a5bf; font: 700 .75rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .vision-stage { position: relative; aspect-ratio: 810 / 620; min-height: 380px; overflow: hidden; background: #0a1321; }
+    .source-image { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 45%; filter: saturate(.88) contrast(1.02); }
+    .scan-line { position: absolute; z-index: 3; left: 0; right: 0; top: -8%; height: 17%; opacity: 0; background: linear-gradient(to bottom, transparent, rgba(200,255,65,.08) 45%, rgba(200,255,65,.56) 50%, transparent); pointer-events: none; }
+    .vision-stage.scanning .scan-line { opacity: 1; animation: scan 1.5s cubic-bezier(.45,0,.2,1); }
+    @keyframes scan { from { transform: translateY(-10%); } to { transform: translateY(660%); } }
+    .corner { position: absolute; width: 24px; height: 24px; z-index: 4; border-color: rgba(200,255,65,.9); pointer-events: none; }
+    .corner.tl { left: 16px; top: 16px; border-left: 2px solid; border-top: 2px solid; }
+    .corner.tr { right: 16px; top: 16px; border-right: 2px solid; border-top: 2px solid; }
+    .corner.bl { left: 16px; bottom: 16px; border-left: 2px solid; border-bottom: 2px solid; }
+    .corner.br { right: 16px; bottom: 16px; border-right: 2px solid; border-bottom: 2px solid; }
+    .detection-layer { position: absolute; inset: 0; z-index: 5; }
+    .detection {
+      position: absolute; display: block; min-width: 12px; min-height: 12px; padding: 0; border: 2px solid var(--box-color); outline: 1px solid rgba(0,0,0,.45); background: rgba(0,0,0,.015); transition: opacity .18s ease, transform .18s ease, border-color .18s;
+    }
+    .detection::before { content: ""; position: absolute; left: -2px; top: -2px; width: 13px; height: 13px; border-left: 3px solid var(--box-color); border-top: 3px solid var(--box-color); }
+    .detection::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 13px; height: 13px; border-right: 3px solid var(--box-color); border-bottom: 3px solid var(--box-color); }
+    .detection:hover, .detection.selected { z-index: 6; box-shadow: 0 0 0 2px rgba(255,255,255,.64), 0 0 30px color-mix(in srgb, var(--box-color) 40%, transparent); }
+    .box-label { position: absolute; left: -2px; top: -28px; white-space: nowrap; padding: 3px 7px; color: #07101c; background: var(--box-color); border-radius: 4px 4px 4px 0; font: 800 .74rem/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .stage-status { position: absolute; right: 16px; bottom: 15px; z-index: 6; display: flex; align-items: center; gap: 7px; padding: 6px 9px; color: #d6e2f1; background: rgba(8,16,29,.72); border: 1px solid rgba(255,255,255,.16); border-radius: 7px; backdrop-filter: blur(8px); font: 700 .7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .status-mark { width: 6px; height: 6px; border-radius: 50%; background: var(--lime); }
+    .stage-status.running .status-mark { animation: pulse .65s infinite alternate; }
+    @keyframes pulse { to { opacity: .25; transform: scale(1.7); } }
+    .result-strip { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #223149; }
+    .mini-stat { padding: 13px 16px; border-right: 1px solid #223149; }
+    .mini-stat:last-child { border: 0; }
+    .mini-stat strong { display: block; color: #fff; font-size: 1.03rem; letter-spacing: -.03em; }
+    .mini-stat span { color: #8498b1; font-size: .72rem; }
+
+    .control-card { padding: 19px; color: #eaf3ff; background: var(--panel); }
+    .control-card h2 { margin: 0; color: #fff; font-size: 1.16rem; letter-spacing: -.025em; }
+    .control-card > p { margin: 5px 0 20px; color: #9db0c8; font-size: .86rem; }
+    .run-button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; color: #132000; border: 0; border-radius: 12px; background: var(--lime); box-shadow: inset 0 -2px 0 rgba(47,78,0,.24); font-weight: 850; }
+    .run-button:hover { background: #d8ff73; }
+    .run-button.running { color: #e5f2f9; background: #24364e; box-shadow: none; }
+    .play-icon { width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid currentColor; }
+    .run-button.running .play-icon { width: 10px; height: 12px; border: 0; background: currentColor; clip-path: polygon(0 0, 34% 0, 34% 100%, 0 100%, 0 0, 66% 0, 100% 0, 100% 100%, 66% 100%); }
+    .control-group { padding: 17px 0; border-bottom: 1px solid #283a53; }
+    .control-group:last-child { border: 0; padding-bottom: 0; }
+    .control-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .control-label { color: #d9e5f2; font-size: .86rem; font-weight: 750; }
+    .control-value { color: var(--lime); font: 800 .9rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .control-note { margin: 4px 0 9px; color: #8195b0; font-size: .75rem; }
+    input[type="range"] { width: 100%; height: 17px; appearance: none; background: transparent; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 5px; border-radius: 9px; background: linear-gradient(to right, var(--lime) 0 var(--fill, 50%), #33455e var(--fill, 50%) 100%); }
+    input[type="range"]::-webkit-slider-thumb { width: 17px; height: 17px; margin-top: -6px; appearance: none; border: 3px solid #eaffad; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 2px #122039; }
+    input[type="range"]::-moz-range-track { height: 5px; border-radius: 9px; background: #33455e; }
+    input[type="range"]::-moz-range-progress { height: 5px; border-radius: 9px; background: var(--lime); }
+    input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: 3px solid #eaffad; border-radius: 50%; background: var(--lime); }
+    .size-selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .size-button { padding: 8px 4px; color: #aabbd1; border: 1px solid #31445e; border-radius: 8px; background: #152238; font: 750 .78rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .size-button:hover { border-color: #6b86a4; }
+    .size-button.active { color: #192600; border-color: var(--lime); background: var(--lime); }
+    .pipeline-status { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 7px; }
+    .status-step { padding: 5px 2px; color: #7387a1; border: 1px solid #2b3f58; border-radius: 5px; font: 700 .59rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+    .status-step.active { color: #0e1c16; border-color: var(--lime); background: var(--lime); }
+    .status-step.done { color: #c6e7de; border-color: #365f55; background: #15362f; }
+    .class-filters { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .class-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; color: #bfd0e5; border: 1px solid #33465e; border-radius: 7px; background: #152238; font-size: .75rem; }
+    .class-chip input { width: 13px; height: 13px; accent-color: var(--lime); }
+    .legend-dot { width: 7px; height: 7px; border-radius: 2px; background: currentColor; }
+    .hint { margin: 15px 0 0; color: #8fa4bd; font-size: .76rem; }
+    kbd { padding: 1px 5px; color: #d4e1ee; border: 1px solid #3d526a; border-radius: 4px; background: #1c2b40; font: 700 .7rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .section { max-width: 1296px; margin: 0 auto; padding: 86px 0 0; scroll-margin-top: 68px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 25px; }
+    .section-kicker { margin: 0 0 7px; color: #4763a9; font-size: .74rem; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+    .section h2 { margin: 0; font-size: clamp(1.75rem, 3vw, 2.65rem); line-height: 1.12; letter-spacing: -.045em; }
+    .section-intro { max-width: 530px; margin: 0; color: var(--muted); font-size: .93rem; }
+
+    .explain-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr); gap: 18px; }
+    .architecture { padding: 26px; color: #e8f1fc; background: #0e1829; border-radius: var(--radius); box-shadow: var(--shadow); }
+    .architecture-top { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .architecture h3 { margin: 0; color: #fff; font-size: 1.1rem; }
+    .architecture p { margin: 5px 0 0; color: #91a6bf; font-size: .84rem; }
+    .architect-flow { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; gap: 7px; margin-top: 28px; }
+    .arch-node { position: relative; min-height: 94px; display: grid; align-content: center; padding: 11px; border: 1px solid #2c3f58; border-radius: 13px; background: #142237; transition: transform .18s, border-color .18s, background .18s; }
+    .arch-node:hover, .arch-node.active { transform: translateY(-4px); border-color: var(--cyan); background: #1a2b45; }
+    .arch-node small { color: #8ba1bc; font: 700 .65rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .arch-node strong { margin-top: 4px; color: #f4f9ff; font-size: .78rem; line-height: 1.25; }
+    .arch-arrow { color: var(--lime); font-size: 1rem; text-align: center; }
+    .feature-bars { display: grid; gap: 7px; margin-top: 20px; }
+    .feature-row { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; color: #91a6bf; font: 700 .68rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .feature-track { height: 8px; overflow: hidden; border-radius: 10px; background: #23364d; }
+    .feature-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cyan), var(--lime)); transition: width .5s ease; }
+    .feature-row em { min-width: 60px; color: #d2deec; font-style: normal; text-align: right; }
+    .concept-panel { min-height: 346px; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); box-shadow: 0 8px 28px rgba(19,42,74,.06); }
+    .concept-label { margin: 0; color: #5571b6; font: 800 .73rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; }
+    .concept-panel h3 { margin: 13px 0 10px; font-size: 1.5rem; letter-spacing: -.04em; }
+    .concept-panel p { margin: 0; color: var(--muted); }
+    .concept-terms { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 23px; }
+    .concept-term { padding: 5px 8px; color: #35445f; border-radius: 7px; background: #eaf0fb; font-size: .75rem; font-weight: 700; }
+    .concept-foot { margin-top: 24px; padding-top: 15px; color: #35445f; border-top: 1px solid var(--line); font-size: .84rem; }
+    .concept-foot strong { color: #13213a; }
+
+    .compare-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr); gap: 18px; }
+    .model-picker, .metrics-card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); box-shadow: 0 8px 28px rgba(19,42,74,.06); }
+    .model-picker h3, .metrics-card h3 { margin: 0; font-size: 1.08rem; }
+    .model-picker > p, .metrics-card > p { margin: 6px 0 16px; color: var(--muted); font-size: .84rem; }
+    .variant-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+    .variant { padding: 12px 5px; color: #5a6880; border: 1px solid var(--line); border-radius: 10px; background: #f8faff; font: 850 1rem ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+    .variant:hover { border-color: #7593c7; }
+    .variant.active { color: #112000; border-color: var(--lime-dark); background: var(--lime); }
+    .variant-detail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
+    .variant-metric { padding: 13px; border-radius: 12px; background: #f0f4fa; }
+    .variant-metric strong { display: block; color: #13213a; font-size: 1.15rem; letter-spacing: -.04em; }
+    .variant-metric span { color: #697891; font-size: .71rem; }
+    .choice-note { margin: 18px 0 0; padding: 13px 14px; color: #385043; border-left: 3px solid var(--lime-dark); border-radius: 0 10px 10px 0; background: #effadc; font-size: .84rem; }
+    .bars { display: grid; gap: 15px; margin-top: 22px; }
+    .bar-row { display: grid; grid-template-columns: 42px 1fr 52px; gap: 10px; align-items: center; color: #53627c; font: 700 .74rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .bar-track { height: 11px; overflow: hidden; border-radius: 99px; background: #e8edf5; }
+    .bar { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #769af4, #79d6ff); transition: width .42s ease; }
+    .bar.selected { background: linear-gradient(90deg, #a2ca28, var(--lime)); }
+    .metrics-footer { display: flex; align-items: center; gap: 10px; margin-top: 21px; padding-top: 15px; border-top: 1px solid var(--line); color: #6c7b91; font-size: .78rem; }
+    .metrics-footer strong { color: #263650; }
+
+    .deploy-grid { display: grid; grid-template-columns: .84fr 1.16fr; gap: 18px; }
+    .rule-card { padding: 25px; color: #eaf2fb; background: var(--panel); border-radius: var(--radius); }
+    .rule-card h3 { margin: 0; color: #fff; font-size: 1.14rem; }
+    .rule-list { display: grid; gap: 15px; margin: 21px 0 0; padding: 0; list-style: none; }
+    .rule-list li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; color: #aebed1; font-size: .84rem; }
+    .rule-list b { width: 27px; height: 27px; display: grid; place-items: center; color: #152100; border-radius: 8px; background: var(--lime); font: 850 .72rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .rule-list strong { display: block; color: #f1f7ff; }
+    .command-card { position: relative; padding: 25px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
+    .command-card h3 { margin: 0; font-size: 1.14rem; }
+    .command-card p { margin: 7px 0 16px; color: var(--muted); font-size: .85rem; }
+    pre { margin: 0; padding: 18px; overflow: auto; color: #d7e6f5; background: #0c1727; border-radius: 12px; font: .82rem/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
+    .copy-button { position: absolute; top: 84px; right: 37px; padding: 5px 9px; color: #c3d4e4; border: 1px solid #334a62; border-radius: 7px; background: #182b40; font-size: .72rem; }
+    .copy-button:hover { color: #fff; border-color: #69819a; }
+    footer { max-width: 1296px; margin: 78px auto 0; padding: 23px 0 35px; color: #728198; border-top: 1px solid var(--line); font-size: .78rem; }
+    footer strong { color: #394861; }
+
+    @media (max-width: 1050px) {
+      .lab { grid-template-columns: 1fr; }
+      .control-card { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+      .control-card > header, .control-card > .run-button { grid-column: 1 / -1; }
+      .control-card > p { grid-column: 1 / -1; }
+      .control-card .control-group:last-child { grid-column: 1 / -1; }
+      .explain-grid, .compare-grid, .deploy-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 720px) {
+      .top-nav a { display: none; }
+      .hero { padding-top: 28px; }
+      .hero-subline { display: block; }
+      .model-meta { margin-top: 13px; }
+      .shell { padding-left: 15px; padding-right: 15px; }
+      .vision-stage { min-height: 330px; }
+      .result-strip { grid-template-columns: 1fr 1fr; }
+      .mini-stat:nth-child(2) { border-right: 0; }
+      .mini-stat:nth-child(n+3) { border-top: 1px solid #223149; }
+      .control-card { display: block; }
+      .architect-flow { grid-template-columns: 1fr; }
+      .arch-arrow { height: 16px; transform: rotate(90deg); }
+      .arch-node { min-height: 62px; }
+      .section { padding-top: 62px; }
+      .section-head { display: block; }
+      .section-intro { margin-top: 12px; }
+      .variant-detail { grid-template-columns: 1fr; }
+      .variant-grid { gap: 5px; }
+      .vision-stage .box-label { transform: scale(.86); transform-origin: left bottom; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#lab" aria-label="YOLO11n 动态检测实验室首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 8V4h4M21 8V4h-4M3 16v4h4M21 16v4h-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="12" r="3.3" fill="currentColor"/></svg>
+      </span>
+      <span>YOLO11n <small>VISION LAB</small></span>
+    </a>
+    <nav class="top-nav" aria-label="页面导航">
+      <a href="#lab">检测实验台</a>
+      <a href="#architecture">模型链路</a>
+      <a href="#tradeoff">速度与精度</a>
+      <span class="live-pill"><i class="live-dot"></i>交互演示</span>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" id="lab">
+      <div class="hero-inner">
+        <p class="eyebrow">Object detection / live sandbox</p>
+        <h1>让每一个框，都有依据。</h1>
+        <div class="hero-subline">
+          <p>拖动阈值、切换输入尺寸，再运行一次检测。你会看到置信度过滤和 NMS 如何共同决定最后保留的目标框。</p>
+          <div class="model-meta" aria-label="模型信息"><span>YOLO11n</span><span>2.6M params</span><span>COCO</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="shell">
+      <section class="lab" aria-label="YOLO 检测交互实验台">
+        <article class="vision-card">
+          <div class="card-head">
+            <div class="card-title"><i class="camera-dot"></i>输入画面 · bus.jpg</div>
+            <span class="frame-count" id="frameInfo">FRAME 0184 · 810 × 1080</span>
+          </div>
+          <div class="vision-stage" id="visionStage">
+            <img class="source-image" src="assets/bus.jpg" alt="街边公交车与行人的测试图片">
+            <div class="scan-line" aria-hidden="true"></div>
+            <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span>
+            <span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
+            <div class="detection-layer" id="detectionLayer" aria-label="当前检测框"></div>
+            <div class="stage-status" id="stageStatus"><i class="status-mark"></i><span id="statusText">READY · 5 BOXES</span></div>
+          </div>
+          <div class="result-strip" aria-label="推理摘要">
+            <div class="mini-stat"><strong id="keptCount">5</strong><span>保留目标</span></div>
+            <div class="mini-stat"><strong id="suppressedCount">2</strong><span>NMS 抑制</span></div>
+            <div class="mini-stat"><strong id="latencyValue">18.7 ms</strong><span>端到端延迟</span></div>
+            <div class="mini-stat"><strong id="precisionValue">0.76</strong><span>平均置信度</span></div>
+          </div>
+        </article>
+
+        <aside class="control-card" aria-label="检测参数">
+          <header><h2>推理控制台</h2></header>
+          <p>这是一次可解释的前端模拟：框和候选分数来自仓库中的示例推理结果，用于观察后处理逻辑。</p>
+          <button class="run-button" id="runButton" type="button"><i class="play-icon" aria-hidden="true"></i><span>运行一次检测</span></button>
+
+          <div class="control-group">
+            <div class="control-line"><label class="control-label" for="confidence">置信度阈值</label><output class="control-value" id="confidenceValue">0.35</output></div>
+            <p class="control-note">低于此分数的候选框会被直接过滤。</p>
+            <input id="confidence" type="range" min="0.15" max="0.90" value="0.35" step="0.01">
+          </div>
+          <div class="control-group">
+            <div class="control-line"><label class="control-label" for="iou">NMS IoU 阈值</label><output class="control-value" id="iouValue">0.70</output></div>
+            <p class="control-note">重叠程度高于此值的低分框将被抑制。</p>
+            <input id="iou" type="range" min="0.30" max="0.90" value="0.70" step="0.01">
+          </div>
+          <div class="control-group">
+            <div class="control-line"><span class="control-label">输入尺寸</span><output class="control-value" id="sizeValue">640 px</output></div>
+            <div class="size-selector" role="group" aria-label="输入尺寸">
+              <button class="size-button" type="button" data-size="320">320</button>
+              <button class="size-button active" type="button" data-size="640">640</button>
+              <button class="size-button" type="button" data-size="1280">1280</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <div class="control-line"><span class="control-label">推理进度</span><span class="control-value" id="pipelineValue">IDLE</span></div>
+            <div class="pipeline-status" id="pipelineStatus" aria-label="推理阶段">
+              <span class="status-step">INPUT</span><span class="status-step">BACKBONE</span><span class="status-step">NECK</span><span class="status-step">HEAD</span><span class="status-step">NMS</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <span class="control-label">显示类别</span>
+            <div class="class-filters">
+              <label class="class-chip" style="color:#89b2ff"><input type="checkbox" data-class="person" checked><i class="legend-dot"></i>person</label>
+              <label class="class-chip" style="color:#ff79cf"><input type="checkbox" data-class="bus" checked><i class="legend-dot"></i>bus</label>
+              <label class="class-chip" style="color:#ffc66e"><input type="checkbox" data-class="handbag" checked><i class="legend-dot"></i>handbag</label>
+            </div>
+          </div>
+          <p class="hint">快捷键：按 <kbd>Space</kbd> 重新运行；点击任意框可高亮查看。</p>
+        </aside>
+      </section>
+
+      <section class="section" id="architecture">
+        <div class="section-head">
+          <div><p class="section-kicker">How it sees</p><h2>一张图，经过五个清晰步骤。</h2></div>
+          <p class="section-intro">点击左侧任意节点，查看该阶段在“定位物体”这件事上各自负责什么。</p>
+        </div>
+        <div class="explain-grid">
+          <article class="architecture">
+            <div class="architecture-top"><div><h3>YOLO11n 检测链路</h3><p>从像素到可用结果，速度来自端到端设计。</p></div><span class="live-pill">ANCHOR-FREE</span></div>
+            <div class="architect-flow" id="architectureFlow">
+              <button class="arch-node active" type="button" data-concept="input"><small>01 / INPUT</small><strong>Letterbox<br>缩放与填充</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="backbone"><small>02 / BACKBONE</small><strong>C3k2 · SPPF<br>视觉特征提取</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="neck"><small>03 / NECK</small><strong>PAFPN<br>多尺度融合</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="head"><small>04 / HEAD</small><strong>Decoupled Head<br>分类与回归</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="nms"><small>05 / NMS</small><strong>Confidence · IoU<br>输出净化</strong></button>
+            </div>
+            <div class="feature-bars" aria-label="多尺度特征">
+              <div class="feature-row"><span>P3</span><div class="feature-track"><div class="feature-fill" id="p3Fill" style="width:86%"></div></div><em>small</em></div>
+              <div class="feature-row"><span>P4</span><div class="feature-track"><div class="feature-fill" id="p4Fill" style="width:61%"></div></div><em>medium</em></div>
+              <div class="feature-row"><span>P5</span><div class="feature-track"><div class="feature-fill" id="p5Fill" style="width:37%"></div></div><em>large</em></div>
+            </div>
+          </article>
+          <article class="concept-panel" id="conceptPanel">
+            <p class="concept-label" id="conceptLabel">01 / INPUT</p>
+            <h3 id="conceptTitle">先不拉伸，再开始看。</h3>
+            <p id="conceptText">Letterbox 会保持原始长宽比，把图像缩放到模型输入尺寸，再用边缘填充补齐。这样既能批量计算，也不会把人和公交车压扁。</p>
+            <div class="concept-terms" id="conceptTerms"><span class="concept-term">aspect ratio</span><span class="concept-term">padding</span><span class="concept-term">640 × 640</span></div>
+            <p class="concept-foot" id="conceptFoot"><strong>观察重点：</strong>坐标必须在预处理后映射回原图，才会准确落在目标上。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="tradeoff">
+        <div class="section-head">
+          <div><p class="section-kicker">Deployment choices</p><h2>模型越大，不等于你的场景越合适。</h2></div>
+          <p class="section-intro">选择一个模型规模，观察参数量、精度和相对延迟的取舍。数值用于学习对比，部署时仍应以你的设备实测为准。</p>
+        </div>
+        <div class="compare-grid">
+          <article class="model-picker">
+            <h3>YOLO11 模型规模</h3><p>以 COCO 检测作为相对参考。</p>
+            <div class="variant-grid" role="group" aria-label="YOLO11 模型规模">
+              <button class="variant active" type="button" data-variant="n">n</button><button class="variant" type="button" data-variant="s">s</button><button class="variant" type="button" data-variant="m">m</button><button class="variant" type="button" data-variant="l">l</button><button class="variant" type="button" data-variant="x">x</button>
+            </div>
+            <div class="variant-detail">
+              <div class="variant-metric"><strong id="variantParams">2.6M</strong><span>参数量</span></div>
+              <div class="variant-metric"><strong id="variantMap">39.5</strong><span>mAP@0.5:0.95</span></div>
+              <div class="variant-metric"><strong id="variantLatency">18.7 ms</strong><span>演示延迟</span></div>
+            </div>
+            <p class="choice-note" id="choiceNote">从 <strong>n</strong> 开始：小数据集和端侧原型更容易跑通，也更方便把问题定位在数据和阈值上。</p>
+          </article>
+          <article class="metrics-card">
+            <h3>取舍，一眼可见</h3><p>绿色高亮代表当前选择；条形长度是这一组模型的相对值。</p>
+            <div class="bars" id="metricBars" aria-label="模型指标比较"></div>
+            <div class="metrics-footer"><span class="live-dot"></span><span><strong id="metricFooter">YOLO11n</strong> 适合快速验证与资源受限部署。</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="deploy">
+        <div class="section-head">
+          <div><p class="section-kicker">From demo to code</p><h2>把交互里的判断，带回真实推理。</h2></div>
+          <p class="section-intro">演示帮助你理解参数影响；实际项目还要在目标数据上检查误检、漏检、速度和每类指标。</p>
+        </div>
+        <div class="deploy-grid">
+          <article class="rule-card">
+            <h3>三个实用判断</h3>
+            <ol class="rule-list">
+              <li><b>01</b><div><strong>误检太多</strong>先提高 <code>conf</code>，再查看各类 PR 曲线是否已经饱和。</div></li>
+              <li><b>02</b><div><strong>密集人群漏检</strong>尝试降低 NMS IoU 阈值，并检查训练图是否覆盖遮挡场景。</div></li>
+              <li><b>03</b><div><strong>小目标效果差</strong>优先提高输入尺寸，确认速度可接受后再考虑更大的模型。</div></li>
+            </ol>
+          </article>
+          <article class="command-card">
+            <h3>用本仓库运行同一张图片</h3>
+            <p>从真实的 Ultralytics 推理开始，再把阈值与这里的观察结果对照。</p>
+            <button class="copy-button" id="copyButton" type="button">复制</button>
+            <pre id="command">uv run python -m yolo11n.infer \
+  --src samples/bus.jpg \
+  --weights yolo11n.pt \
+  --conf 0.35 \
+  --imgsz 640 \
+  --device auto</pre>
+          </article>
+        </div>
+      </section>
+
+      <footer><strong>YOLO11n 动态检测实验室</strong> · 基于本仓库的示例图片与 YOLO11n 教程内容制作。</footer>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const candidates = [
+        { id: 'bus-main', cls: 'bus', label: 'bus', conf: .81, x: 3.3, y: 20.6, w: 95.8, h: 48.8, color: '#ff70ca' },
+        { id: 'bus-dup', cls: 'bus', label: 'bus', conf: .52, x: 4.1, y: 21.5, w: 94.2, h: 47.6, color: '#ff70ca' },
+        { id: 'person-left', cls: 'person', label: 'person', conf: .82, x: 5.9, y: 43.4, w: 24.2, h: 44.2, color: '#6da4ff' },
+        { id: 'person-left-dup', cls: 'person', label: 'person', conf: .46, x: 6.7, y: 44.7, w: 22.4, h: 42.7, color: '#6da4ff' },
+        { id: 'person-center', cls: 'person', label: 'person', conf: .80, x: 27.0, y: 44.2, w: 15.8, h: 37.4, color: '#6da4ff' },
+        { id: 'person-right', cls: 'person', label: 'person', conf: .57, x: 79.7, y: 34.2, w: 20.1, h: 49.4, color: '#6da4ff' },
+        { id: 'handbag', cls: 'handbag', label: 'handbag', conf: .31, x: 0.4, y: 61.1, w: 9.1, h: 17.8, color: '#ffba63' }
+      ];
+      const models = {
+        n: { params: '2.6M', map: '39.5', latency: '18.7 ms', rel: 22, note: '从 <strong>n</strong> 开始：小数据集和端侧原型更容易跑通，也更方便把问题定位在数据和阈值上。', footer: 'YOLO11n 适合快速验证与资源受限部署。' },
+        s: { params: '9.4M', map: '47.0', latency: '29.4 ms', rel: 35, note: '<strong>s</strong> 是更均衡的选择：当 n 已经稳定但召回仍不够时，再让它承担更多特征容量。', footer: 'YOLO11s 在速度与精度之间更均衡。' },
+        m: { params: '20.1M', map: '51.5', latency: '47.8 ms', rel: 55, note: '<strong>m</strong> 更适合精度优先、设备有一定余量的业务场景。', footer: 'YOLO11m 面向较高的精度要求。' },
+        l: { params: '25.3M', map: '53.4', latency: '62.6 ms', rel: 71, note: '<strong>l</strong> 需要更认真地评估显存、功耗和线上时延预算。', footer: 'YOLO11l 适合有较充足算力的部署。' },
+        x: { params: '56.9M', map: '54.7', latency: '101.3 ms', rel: 100, note: '<strong>x</strong> 追求最高精度；先确认数据质量与输入尺寸没有更高性价比的提升空间。', footer: 'YOLO11x 优先追求检测精度。' }
+      };
+      const concepts = {
+        input: { label: '01 / INPUT', title: '先不拉伸，再开始看。', text: 'Letterbox 会保持原始长宽比，把图像缩放到模型输入尺寸，再用边缘填充补齐。这样既能批量计算，也不会把人和公交车压扁。', terms: ['aspect ratio', 'padding', '640 × 640'], foot: '<strong>观察重点：</strong>坐标必须在预处理后映射回原图，才会准确落在目标上。', bars: [86, 61, 37] },
+        backbone: { label: '02 / BACKBONE', title: '从纹理中长出语义。', text: '骨干网络把像素逐层编码：浅层保留轮廓和边缘，深层逐渐理解“这像一辆车”或“这是一个人”。YOLO11n 使用轻量 C3k2 与 SPPF。', terms: ['C3k2', 'SPPF', 'feature extraction'], foot: '<strong>观察重点：</strong>同一张图不会只产生一张特征图，而是同时保留多个尺度。', bars: [79, 69, 48] },
+        neck: { label: '03 / NECK', title: '让大视野与细节互相借力。', text: 'PAFPN 把不同分辨率的特征上下融合：语义强的深层信息帮助判断类别，高分辨率的浅层信息帮助找准小目标。', terms: ['FPN', 'PAN', 'multi-scale'], foot: '<strong>观察重点：</strong>小目标依赖 P3，大目标常能从 P5 获得更完整的上下文。', bars: [92, 77, 58] },
+        head: { label: '04 / HEAD', title: '分类与定位，各做擅长的事。', text: '解耦头分别预测类别和边界框。它采用 anchor-free 思路，直接回归位置到边界的距离，不必为新数据集重新聚类先验框。', terms: ['anchor-free', 'DFL', 'decoupled head'], foot: '<strong>观察重点：</strong>候选框还不是最终结果，同一物体附近往往会产生多个高分预测。', bars: [84, 73, 62] },
+        nms: { label: '05 / NMS', title: '留下最可信的那一个。', text: '先按置信度过滤，再逐一比较同类别框的交并比。对同一物体高度重叠的低分框，NMS 会将其抑制，避免一辆公交车被重复报出。', terms: ['confidence', 'IoU', 'suppression'], foot: '<strong>试试看：</strong>回到上方把 NMS IoU 滑到 0.90，观察重复框为什么会重新出现。', bars: [74, 63, 49] }
+      };
+      const state = { conf: .35, iou: .70, size: 640, selected: null, hiddenClasses: new Set(), running: false };
+      const $ = (id) => document.getElementById(id);
+      const detectionLayer = $('detectionLayer');
+      const stage = $('visionStage');
+      const status = $('stageStatus');
+      const steps = [...document.querySelectorAll('.status-step')];
+      const sliders = { confidence: $('confidence'), iou: $('iou') };
+
+      const setSliderFill = (input) => {
+        const pct = ((input.value - input.min) / (input.max - input.min)) * 100;
+        input.style.setProperty('--fill', pct + '%');
+      };
+      const overlap = (a, b) => {
+        const left = Math.max(a.x, b.x), right = Math.min(a.x + a.w, b.x + b.w);
+        const top = Math.max(a.y, b.y), bottom = Math.min(a.y + a.h, b.y + b.h);
+        const inter = Math.max(0, right - left) * Math.max(0, bottom - top);
+        return inter / (a.w * a.h + b.w * b.h - inter);
+      };
+      const getResult = () => {
+        const filtered = candidates
+          .filter(c => c.conf >= state.conf && !state.hiddenClasses.has(c.cls))
+          .sort((a, b) => b.conf - a.conf);
+        const kept = [], suppressed = [];
+        for (const candidate of filtered) {
+          const isDuplicate = kept.some(item => item.cls === candidate.cls && overlap(item, candidate) > state.iou);
+          if (isDuplicate) suppressed.push(candidate); else kept.push(candidate);
+        }
+        return { kept, suppressed };
+      };
+      const updateMetrics = (result) => {
+        const latency = { 320: 10.2, 640: 18.7, 1280: 65.9 }[state.size];
+        const avg = result.kept.length ? result.kept.reduce((sum, item) => sum + item.conf, 0) / result.kept.length : 0;
+        $('keptCount').textContent = result.kept.length;
+        $('suppressedCount').textContent = result.suppressed.length;
+        $('latencyValue').textContent = latency.toFixed(1) + ' ms';
+        $('precisionValue').textContent = avg.toFixed(2);
+        $('frameInfo').textContent = 'FRAME 0184 · ' + state.size + ' × ' + state.size;
+      };
+      const renderDetections = () => {
+        const result = getResult();
+        detectionLayer.innerHTML = '';
+        result.kept.forEach((item, index) => {
+          const button = document.createElement('button');
+          button.className = 'detection' + (state.selected === item.id ? ' selected' : '');
+          button.type = 'button';
+          button.style.cssText = '--box-color:' + item.color + ';left:' + item.x + '%;top:' + item.y + '%;width:' + item.w + '%;height:' + item.h + '%;animation:boxIn .3s ' + (index * .045) + 's both';
+          button.setAttribute('aria-label', item.label + '，置信度 ' + item.conf.toFixed(2));
+          button.innerHTML = '<span class="box-label">' + item.label + ' ' + item.conf.toFixed(2) + '</span>';
+          button.addEventListener('click', () => { state.selected = item.id; renderDetections(); });
+          detectionLayer.appendChild(button);
+        });
+        updateMetrics(result);
+        $('statusText').textContent = 'READY · ' + result.kept.length + ' BOX' + (result.kept.length === 1 ? '' : 'ES');
+      };
+      const updateControls = () => {
+        $('confidenceValue').value = state.conf.toFixed(2);
+        $('iouValue').value = state.iou.toFixed(2);
+        $('sizeValue').value = state.size + ' px';
+        renderDetections();
+      };
+      const runInference = async () => {
+        if (state.running) return;
+        state.running = true;
+        $('runButton').classList.add('running');
+        $('runButton').lastElementChild.textContent = '检测进行中…';
+        status.classList.add('running');
+        stage.classList.remove('scanning'); void stage.offsetWidth; stage.classList.add('scanning');
+        for (let i = 0; i < steps.length; i++) {
+          steps.forEach((step, index) => step.className = 'status-step' + (index < i ? ' done' : index === i ? ' active' : ''));
+          $('pipelineValue').textContent = steps[i].textContent;
+          $('statusText').textContent = 'RUNNING · ' + steps[i].textContent;
+          await new Promise(resolve => setTimeout(resolve, 260));
+        }
+        steps.forEach(step => step.className = 'status-step done');
+        $('pipelineValue').textContent = 'DONE';
+        renderDetections();
+        await new Promise(resolve => setTimeout(resolve, 350));
+        $('runButton').classList.remove('running');
+        $('runButton').lastElementChild.textContent = '运行一次检测';
+        status.classList.remove('running');
+        state.running = false;
+      };
+      sliders.confidence.addEventListener('input', (event) => { state.conf = Number(event.target.value); setSliderFill(event.target); updateControls(); });
+      sliders.iou.addEventListener('input', (event) => { state.iou = Number(event.target.value); setSliderFill(event.target); updateControls(); });
+      document.querySelectorAll('.size-button').forEach(button => button.addEventListener('click', () => {
+        state.size = Number(button.dataset.size);
+        document.querySelectorAll('.size-button').forEach(item => item.classList.toggle('active', item === button));
+        updateControls();
+      }));
+      document.querySelectorAll('[data-class]').forEach(check => check.addEventListener('change', () => {
+        check.checked ? state.hiddenClasses.delete(check.dataset.class) : state.hiddenClasses.add(check.dataset.class);
+        updateControls();
+      }));
+      $('runButton').addEventListener('click', runInference);
+      window.addEventListener('keydown', (event) => {
+        if (event.code === 'Space' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) { event.preventDefault(); runInference(); }
+      });
+
+      const renderConcept = (key) => {
+        const item = concepts[key];
+        $('conceptLabel').textContent = item.label;
+        $('conceptTitle').textContent = item.title;
+        $('conceptText').textContent = item.text;
+        $('conceptTerms').innerHTML = item.terms.map(term => '<span class="concept-term">' + term + '</span>').join('');
+        $('conceptFoot').innerHTML = item.foot;
+        ['p3', 'p4', 'p5'].forEach((id, index) => $(id + 'Fill').style.width = item.bars[index] + '%');
+      };
+      document.querySelectorAll('.arch-node').forEach(button => button.addEventListener('click', () => {
+        document.querySelectorAll('.arch-node').forEach(node => node.classList.toggle('active', node === button));
+        renderConcept(button.dataset.concept);
+      }));
+
+      const renderModel = (key) => {
+        const selected = models[key];
+        $('variantParams').textContent = selected.params;
+        $('variantMap').textContent = selected.map;
+        $('variantLatency').textContent = selected.latency;
+        $('choiceNote').innerHTML = selected.note;
+        $('metricFooter').textContent = 'YOLO11' + key;
+        $('metricFooter').nextSibling.textContent = ' ' + selected.footer;
+        $('metricBars').innerHTML = Object.entries(models).map(([name, model]) => {
+          const active = name === key ? ' selected' : '';
+          return '<div class="bar-row"><span>11' + name + '</span><div class="bar-track"><div class="bar' + active + '" style="width:' + model.rel + '%"></div></div><strong>' + model.map + '</strong></div>';
+        }).join('');
+        document.querySelectorAll('.variant').forEach(button => button.classList.toggle('active', button.dataset.variant === key));
+      };
+      document.querySelectorAll('.variant').forEach(button => button.addEventListener('click', () => renderModel(button.dataset.variant)));
+
+      $('copyButton').addEventListener('click', async () => {
+        const copyButton = $('copyButton');
+        try { await navigator.clipboard.writeText($('command').textContent); copyButton.textContent = '已复制'; }
+        catch { copyButton.textContent = '请手动复制'; }
+        setTimeout(() => { copyButton.textContent = '复制'; }, 1600);
+      });
+      const style = document.createElement('style');
+      style.textContent = '@keyframes boxIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}';
+      document.head.appendChild(style);
+      setSliderFill(sliders.confidence); setSliderFill(sliders.iou); updateControls(); renderModel('n');
+    })();
+  </script>
+</body>
+</html>
