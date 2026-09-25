@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# uv / venv
+.venv/
+venv/
+
+# 运行产物
+samples/
+pretrained_models/
+runs/
+*.onnx
+*.pt
+!yolo11n.pt
+*.mlpackage/
+whisper_finetuned/
+ecapa_finetuned/
+tiny_vad.pt
+arcface_student.pt
+mobilenetv3.pt
+
+# 模型/数据缓存（自动下载生成）
+.cache/
+*.arrow
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 日志
+*.log
+wandb/

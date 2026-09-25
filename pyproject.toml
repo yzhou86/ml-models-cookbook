@@ -1,0 +1,32 @@
+[project]
+name = "ml-models-cookbook"
+version = "0.1.0"
+description = "小模型训练/推理/优化加速实战工程（Apple Silicon M 系列适配，面试向）"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.3",
+    "torchvision>=0.18",
+    "torchaudio>=2.3",
+    "transformers>=4.41",
+    "datasets>=2.19",
+    "accelerate>=0.30",
+    "huggingface_hub>=0.23",
+    "evaluate>=0.4",
+    "speechbrain>=1.0",
+    "ultralytics>=8.3.0",
+    "onnxruntime>=1.17",
+    "onnx>=1.16",
+    "numpy<2.1",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    "scipy",
+    "matplotlib",
+    "scikit-learn",
+    "tqdm",
+    "requests",
+    "Pillow",
+    "opencv-python",
+]
+
+[tool.uv]
+# Apple Silicon: torch 系列默认从 PyPI 的 arm64 wheel 安装，无需额外 index
