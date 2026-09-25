@@ -2,8 +2,15 @@
 
 面向算法工程面试和 Apple Silicon 实践的六模型实验集，覆盖训练、推理、量化、ONNX、CoreML、MPS 与性能验证。默认目标机器是 **MacBook Air M5 / 24GB 统一内存**；所有默认配置都优先保证这类无风扇设备能够完成，而不是追求服务器级吞吐。
 
-## 先读这三份文档
+## 学习与参考文档
 
+- [六模型实战教程目录](docs/tutorials/README.md)
+- [Whisper 实战教程：训练、参数、推理与调优](docs/tutorials/WHISPER_TUTORIAL.md)
+- [Silero VAD 实战教程：训练、参数、推理与调优](docs/tutorials/SILERO_VAD_TUTORIAL.md)
+- [ECAPA-TDNN 实战教程：训练、参数、推理与调优](docs/tutorials/ECAPA_TDNN_TUTORIAL.md)
+- [MobileNetV3 实战教程：训练、参数、推理与调优](docs/tutorials/MOBILENET_V3_TUTORIAL.md)
+- [YOLO11n 实战教程：训练、参数、推理与调优](docs/tutorials/YOLO11N_TUTORIAL.md)
+- [InsightFace 实战教程：训练、参数、推理与调优](docs/tutorials/INSIGHTFACE_TUTORIAL.md)
 - [M5 安装、调参与性能测试](docs/M5_SETUP_AND_BENCHMARK.md)
 - [面试知识体系与高频追问](docs/INTERVIEW_GUIDE.md)
 - [实验记录模板](docs/EXPERIMENT_TEMPLATE.md)

@@ -1,5 +1,7 @@
 # Whisper（tiny / base / small）面试详解
 
+建议先按 [`docs/tutorials/WHISPER_TUTORIAL.md`](../docs/tutorials/WHISPER_TUTORIAL.md) 完成训练、参数、推理和性能优化的完整实验，再使用本文复习原理与面试问答。
+
 ## 1. 模型概况
 
 | 项 | 说明 |

@@ -1,5 +1,7 @@
 # ECAPA-TDNN (SpeechBrain) 面试详解
 
+建议先按 [`docs/tutorials/ECAPA_TDNN_TUTORIAL.md`](../docs/tutorials/ECAPA_TDNN_TUTORIAL.md) 完成训练、参数、推理和性能优化实验，再使用本文复习原理与面试问答。
+
 ## 1. 模型概况
 
 | 项 | 说明 |
