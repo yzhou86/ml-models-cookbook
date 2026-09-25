@@ -4,11 +4,12 @@
     python -m mobilenet_v3.infer                      # small + 示例图
     python -m mobilenet_v3.infer --variant large --src cat.jpg
 """
+
 import argparse
 
 import torch
 from PIL import Image
-from torchvision import models, transforms
+from torchvision import models
 
 
 def load_model(variant: str):
@@ -29,20 +30,14 @@ def main():
     args = parser.parse_args()
 
     from common.utils import download, get_device
-    src = args.src or download(
-        "https://github.com/pytorch/hub/raw/master/images/dog.jpg", "dog.jpg"
-    )
+
+    src = args.src or download("https://github.com/pytorch/hub/raw/master/images/dog.jpg", "dog.jpg")
     device = get_device()
 
     model, weights = load_model(args.variant)
     model = model.to(device)
 
-    preprocess = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=weights.transforms().mean, std=weights.transforms().std),
-    ])
+    preprocess = weights.transforms()
     img = Image.open(src).convert("RGB")
     batch = preprocess(img)[None].to(device)
 

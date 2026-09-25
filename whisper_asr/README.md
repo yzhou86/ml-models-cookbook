@@ -45,7 +45,7 @@
 4. 微调策略（小内存三板斧，M5 24GB 可用）：
    - **冻结 Encoder**：参数从 39M 全开降到只训 decoder，本工程 `--train_encoder` 开关对比
    - **减小 batch + 梯度累积**：等效大 batch
-   - **AMP 半精度**：MPS autocast fp16
+   - **梯度检查点**：显存不足时用重计算换激活内存（`--gradient-checkpointing`）
 5. 评估：WER（词错误率）/ CER（中文字错误率）
 
 **损失**：标准交叉熵（teacher forcing），无 CTC——Whisper 是纯 seq2seq。
@@ -55,7 +55,7 @@
 | 超参 | 推荐值 | 说明 |
 |---|---|---|
 | learning_rate | 1e-5 ~ 6.4e-5 | 微调常用 1e-5 量级；过大毁预训练权重 |
-| batch size | 8~64（视显存） | 小显存用梯度累积等效 |
+| batch size | M5 上 1~4 起步 | 小显存用梯度累积获得更大的等效 batch |
 | epochs | 2~5 | 弱监督基座易过拟合，小数据尤其早停 |
 | warmup_ratio | 0.03~0.1 | 稳住前期训练 |
 | max_length | 225 token | 官方标签截断长度 |
@@ -65,7 +65,7 @@
 
 ## 5. 训练速度优化
 
-- **AMP**：`torch.autocast` 前向 fp16，反向累积 fp32，约 2x 提速
+- **MPS 训练**：当前 Trainer 路径保持 fp32，避免把 CUDA GradScaler 的结论直接套到 MPS
 - **冻结 encoder**：反向只过 decoder，约 40% 计算省下
 - **数据管道**：`datasets.map` + `num_proc` 并行预提取特征并缓存（.arrow 列存），避免训练时现算 mel
 - **DDP/ZeRO**：多卡时 `torchrun` + FSDP/ZeRO-3 切分 optimizer state；M5 单机则用 batch 堆叠 + pin_memory
@@ -75,8 +75,8 @@
 
 | 手段 | 原理 | 实测预期 |
 |---|---|---|
-| **int8 动态量化** | Linear 权重 int8 存储计算，激活运行时量化 | 内存 1/4，CPU 提速 1.5~3x，WER 掉 <1 |
-| **torch.compile** | Inductor 融合算子、生成 Triton kernel | 首次编译慢，稳定后 1.2~2x |
+| **int8 动态量化** | Linear 权重 int8 存储计算，激活运行时量化 | 文件通常明显缩小；延迟与 WER 必须实测 |
+| **torch.compile** | 图捕获、算子融合与内核生成 | MPS/自回归可能图断裂；首次编译单独计时 |
 | **faster-whisper / CTranslate2** | 整图转 int8 + beam 剪枝 + KV 复用 | 4x 提速、内存减半（mac 仅 CPU，思路相同） |
 | **Distil-Whisper** | 蒸馏：teacher=large-v3，student=small 结构 | 2x 参数小 5.8x、6x 快 |
 | **批处理** | 多段音频拼 batch 过 encoder | 吞吐近线性提升 |

@@ -1,11 +1,13 @@
 """ECAPA-TDNN 优化对比: fp32 vs 动态 int8 量化 vs TorchScript。
 
-22M 参数 -> 量化后内存 ~88MB -> ~25MB；CPU 推理提速约 2x。
+动态量化只覆盖 Linear；ECAPA 以 Conv1d 为主，因此脚本重点验证收益是否真实存在。
 """
+
+import argparse
 import copy
 
 import torch
-import torchaudio
+import torch.nn as nn
 
 
 def get_model_and_input():
@@ -18,20 +20,29 @@ def get_model_and_input():
         savedir="pretrained_models/spkrec-ecapa-voxceleb",
         run_opts={"device": "cpu"},
     )
-    ecapa = wrapper.mods["embedding_model"].eval()
+    from common.utils import download, load_audio_mono
 
-    from common.utils import download
-    from speechbrain.lobes.features import Fbank
-    wav, sr = torchaudio.load(download(
-        "https://www2.cs.uic.edu/~i101/SoundFiles/preamble10.wav", "preamble10.wav"
-    ))
-    feats = Fbank()(wav)  # (T, F)
+    wav, _ = load_audio_mono(
+        download("https://raw.githubusercontent.com/openai/whisper/main/tests/jfk.flac", "jfk.flac"),
+        target_sr=16000,
+    )
+    waveform = torch.from_numpy(wav)[None]
+    lengths = torch.ones(1)
+    with torch.inference_mode():
+        feats = wrapper.mods["compute_features"](waveform)
+        feats = wrapper.mods["mean_var_norm"](feats, lengths)
+    ecapa = wrapper.mods["embedding_model"].eval()
     return ecapa, feats
 
 
 def main():
-    from common.utils import benchmark, print_bench
-    print(f"[INFO] qengine = {torch.backends.quantized.engine}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runs", type=int, default=20)
+    args = parser.parse_args()
+
+    from common.utils import benchmark, get_qengine, model_size_mb, print_bench
+
+    print(f"[INFO] qengine = {get_qengine()}")
 
     model, feats = get_model_and_input()
 
@@ -40,19 +51,21 @@ def main():
         m(feats)
 
     run(model)
-    print_bench("ECAPA fp32 (CPU)", benchmark(lambda: run(model), 3, 20))
+    print_bench("ECAPA fp32 (CPU)", benchmark(lambda: run(model), 3, args.runs))
 
     # ---- 1. 动态 int8 量化（Linear 层） ----
-    model_q = copy.deepcopy(model)
-    torch.ao.quantization.quantize_dynamic(model_q, dtype=torch.qint8)
+    model_q = torch.ao.quantization.quantize_dynamic(
+        copy.deepcopy(model), {nn.Linear}, dtype=torch.qint8, inplace=False
+    )
     run(model_q)
-    print_bench("ECAPA int8 dynamic (CPU)", benchmark(lambda: run(model_q), 3, 20))
+    print_bench("ECAPA int8 dynamic (CPU)", benchmark(lambda: run(model_q), 3, args.runs))
+    print(f"[SIZE] fp32={model_size_mb(model):.1f}MB -> int8={model_size_mb(model_q):.1f}MB")
 
     # ---- 2. TorchScript（失败自动降级） ----
     try:
         scripted = torch.jit.script(model)
         run(scripted)
-        print_bench("ECAPA TorchScript (CPU)", benchmark(lambda: run(scripted), 3, 20))
+        print_bench("ECAPA TorchScript (CPU)", benchmark(lambda: run(scripted), 3, args.runs))
     except Exception as e:
         print(f"[WARN] TorchScript 跳过（控制流不支持 script）: {e}")
 
@@ -60,8 +73,8 @@ def main():
     with torch.no_grad():
         e1 = model(feats)
         e2 = model_q(feats)
-    cos = torch.nn.functional.cosine_similarity(e1, e2, dim=-1).item()
-    print(f"[CHECK] 量化前后 embedding 余弦相似度: {cos:.4f} (>0.99 视为无损)")
+    cos = torch.nn.functional.cosine_similarity(e1.flatten(1), e2.flatten(1), dim=-1).item()
+    print(f"[CHECK] 量化前后 embedding 余弦相似度: {cos:.4f}（仍需在验证对上检查 EER）")
 
 
 if __name__ == "__main__":

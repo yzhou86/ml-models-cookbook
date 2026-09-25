@@ -4,6 +4,7 @@
     python -m yolo11n.infer                     # 官方示例图 bus.jpg
     python -m yolo11n.infer --src your.jpg
 """
+
 import argparse
 
 
@@ -13,15 +14,19 @@ def main():
     parser.add_argument("--weights", default="yolo11n.pt")
     parser.add_argument("--conf", type=float, default=0.35)
     parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--device", choices=["auto", "mps", "cpu", "cuda"], default="auto")
     args = parser.parse_args()
 
     from ultralytics import YOLO
-    from common.utils import download
+
+    from common.utils import download, get_device
 
     src = args.src or download("https://ultralytics.com/images/bus.jpg", "bus.jpg")
 
     model = YOLO(args.weights)
-    results = model.predict(src, conf=args.conf, imgsz=args.imgsz, device="mps")
+    device = get_device(args.device)
+    yolo_device = 0 if device.type == "cuda" else device.type
+    results = model.predict(src, conf=args.conf, imgsz=args.imgsz, device=yolo_device)
 
     for r in results:
         names = r.names
@@ -29,10 +34,12 @@ def main():
         print(f"[INFO] {r.path}: 检测到 {len(boxes)} 个目标")
         for b in boxes:
             cls = int(b.cls.item())
-            print(f"  - {names[cls]}: conf={b.conf.item():.2f}, xyxy={[round(v, 1) for v in b.xyxy[0].tolist()]}")
+            print(
+                f"  - {names[cls]}: conf={b.conf.item():.2f}, xyxy={[round(v, 1) for v in b.xyxy[0].tolist()]}"
+            )
         # 保存可视化结果
-        out = r.save(filename="samples/yolo_result.jpg")
-        print(f"[DONE] 可视化保存 -> samples/yolo_result.jpg")
+        r.save(filename="samples/yolo_result.jpg")
+        print("[DONE] 可视化保存 -> samples/yolo_result.jpg")
 
 
 if __name__ == "__main__":

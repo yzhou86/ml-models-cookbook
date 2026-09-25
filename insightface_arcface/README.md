@@ -8,7 +8,7 @@
 | 任务 | 人脸检测（SCRFD）+ 人脸识别/验证（ArcFace） |
 | buffalo_l 组件 | det_10g (SCRFD, 16MB) + w600k_r50 (ArcFace ResNet50, 170MB) |
 | embedding | **512 维**，L2 归一化后余弦比对 |
-| 训练集 | MS1MV3 (580 万人 510 万图，Glint360K 后继)、WIDER FACE（检测） |
+| 训练数据 | InsightFace 系列使用大规模清洗人脸集；SCRFD 常用 WIDER FACE 训练/评估 |
 | 精度 | LFW 99.83%+ / MegaFace 98% 时代基线；w600k_r50 是工业事实标准 |
 | 1:1 vs 1:N | 验证（两张脸比对）vs 检索（在百万库中找，配 FAISS） |
 
@@ -26,10 +26,10 @@
 ### 2.1 SCRFD 检测
 - **Sample-aware/anchor-free**：在 8/16/32 三个 stride 特征图上直接回归 bbox（中心到四边距离×stride）与 5 关键点
 - 训练损失：分类 Focal Loss（正负样本极不平衡）+ 回归 IoU loss
-- 系列分档：det_500m(0.5MB)/det_10m/buffalo 系列——移动端 500m 即够，`g` = "gallon" 大杯版
+- 系列分档按计算量/模型规模提供不同检测器；`det_10g` 名称中的 `10g` 表示约 10 GFLOPs 量级
 
 ### 2.2 5 点对齐（本工程 `align_face`）
-用左/右眼角、鼻尖、左右嘴角五个点做**最小二乘相似变换**到标准模板（112×112 ArcFace 姿态坐标），消除姿态/尺度差异。比对算法对"正脸化"输入极度敏感，不做对齐精度大幅下降。
+用左/右眼角、鼻尖、左右嘴角五个点估计**相似变换**到标准模板（112×112 ArcFace 姿态坐标），只允许旋转、统一缩放和平移，避免普通仿射产生剪切形变。
 
 ### 2.3 ArcFace 损失（本工程 `train.py` 完整实现，面试高频白板题）
 
@@ -57,7 +57,7 @@ cos(θ_yi + m)          ← 正样本对数几率里加 m (m=0.5, s=64)
 
 ## 3. 训练过程（本工程 `train.py`：轻量复现）
 
-1. 数据：`data/faces/` 下每人一个目录若干图（LFW 结构），ImageFolder 加载
+1. 数据：`data/faces/` 下每人一个目录若干图；正式训练前应先检测并缓存 112×112 对齐脸
 2. 骨干：MobileNetV2 迁移（128 维 embedding）——M5 可从零训练的教学配置
 3. 头部：自实现 `ArcMarginProduct(s=64, m=0.5)`
 4. 增强（人脸特有）：随机裁剪/翻转/**轻微旋转**，RGB/亮度抖动；**不可做过大几何形变**（对齐语义会被破坏）
@@ -95,7 +95,7 @@ cos(θ_yi + m)          ← 正样本对数几率里加 m (m=0.5, s=64)
 
 | 手段 | 效果 |
 |---|---|
-| **ONNX int8 动态量化** | det 16MB→4MB、rec 170MB→**45MB**；CPU 提速 2x+；embedding 余弦 >0.99（脚本验证） |
+| **ONNX int8 静态 PTQ** | QDQ + 真实人脸校准；脚本报告实际大小、延迟、embedding cosine 和检测数量 |
 | **换小骨干** | r50 → r18/r100 蒸馏版（MobileFaceNet 4MB）——移动端标准 |
 | **CoreML EP** | macOS 原生 ANE 加速（onnxruntime-coreml） |
 | **两级检索** | 检测全帧跑 → 只对检测框过识别网络（算力自动分配） |

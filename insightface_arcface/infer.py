@@ -9,6 +9,7 @@ SCRFD anchor 解码 + NMS + 5 点对齐（面试可直接讲原理）。
     python -m insightface_arcface.infer                 # 示例两张人脸对比
     python -m insightface_arcface.infer --a 1.jpg --b 2.jpg
 """
+
 import argparse
 import os
 import zipfile
@@ -23,29 +24,52 @@ STRIDES = (8, 16, 32)
 DET_SIZE = (640, 640)
 # ArcFace 标准 5 点模板 (112x112)
 ARCFACE_DST = np.array(
-    [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366],
-     [41.5493, 92.3655], [70.7299, 92.2041]], dtype=np.float32)
+    [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]],
+    dtype=np.float32,
+)
 
 
-def ensure_models() -> dict:
-    """下载/解压 buffalo_l，返回 {name: onnx 会话}。"""
-    root = os.path.join(CACHE, "buffalo_l")
-    if not os.path.isdir(root):
+def get_model_root() -> str:
+    """兼容 release zip 的扁平结构和旧版 buffalo_l 子目录结构。"""
+    nested = os.path.join(CACHE, "buffalo_l")
+    required = ("det_10g.onnx", "w600k_r50.onnx")
+    if all(os.path.isfile(os.path.join(nested, name)) for name in required):
+        return nested
+    if all(os.path.isfile(os.path.join(CACHE, name)) for name in required):
+        return CACHE
+    return nested
+
+
+def ensure_models(threads: int = 0) -> dict:
+    """下载/解压 buffalo_l，只加载检测与识别两个必需 ONNX 模型。"""
+    root = get_model_root()
+    required = ("det_10g.onnx", "w600k_r50.onnx")
+    if not all(os.path.isfile(os.path.join(root, name)) for name in required):
         os.makedirs(CACHE, exist_ok=True)
         zip_path = os.path.join(CACHE, "buffalo_l.zip")
         if not os.path.exists(zip_path):
             import urllib.request
+
             print(f"[DOWNLOAD] {MODEL_URL} (~280MB, 首次运行)")
             urllib.request.urlretrieve(MODEL_URL, zip_path)
+        root = os.path.join(CACHE, "buffalo_l")
+        os.makedirs(root, exist_ok=True)
         with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(CACHE)
+            cache_real = os.path.realpath(root)
+            for member in zf.infolist():
+                destination = os.path.realpath(os.path.join(root, member.filename))
+                if os.path.commonpath([cache_real, destination]) != cache_real:
+                    raise RuntimeError(f"压缩包包含不安全路径: {member.filename}")
+            zf.extractall(root)
     sessions = {}
-    for f in os.listdir(root):
-        if f.endswith(".onnx"):
-            sessions[f[:-5]] = ort.InferenceSession(
-                os.path.join(root, f), providers=["CPUExecutionProvider"]
-            )
-    assert "det_10g" in sessions and "w600k_r50" in sessions, f"模型不完整: {list(sessions)}"
+    options = ort.SessionOptions()
+    if threads > 0:
+        options.intra_op_num_threads = threads
+    for name in ("det_10g", "w600k_r50"):
+        path = os.path.join(root, f"{name}.onnx")
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"模型不完整，缺少: {path}")
+        sessions[name] = ort.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
     return sessions
 
 
@@ -68,34 +92,41 @@ def nms(dets: np.ndarray, thresh: float = 0.4) -> list:
     return keep
 
 
+def detector_blob(img_bgr: np.ndarray) -> tuple[np.ndarray, float]:
+    """SCRFD letterbox 预处理，返回 NCHW blob 与缩放率。"""
+    h, w = img_bgr.shape[:2]
+    ratio = min(DET_SIZE[0] / w, DET_SIZE[1] / h)
+    resized = cv2.resize(img_bgr, (round(w * ratio), round(h * ratio)))
+    canvas = np.zeros((DET_SIZE[1], DET_SIZE[0], 3), dtype=np.float32)
+    canvas[: resized.shape[0], : resized.shape[1]] = resized
+    # 官方 SCRFD blobFromImage 使用 swapRB=True。
+    blob = ((canvas[:, :, ::-1] - 127.5) / 128.0).transpose(2, 0, 1)[None].astype(np.float32)
+    return blob, ratio
+
+
 def detect_faces(det_sess, img_bgr: np.ndarray, det_thresh: float = 0.5) -> np.ndarray:
     """SCRFD 解码。输出顺序: [3 组 scores, 3 组 bbox, 3 组 kps]。
 
     bbox 是相对 anchor 中心的 4 距离（乘 stride），kps 同理 -> 标准 anchor-based 解码。
     返回 (N, 15): [x1,y1,x2,y2,score, 10 个关键点坐标]。
     """
-    h, w = img_bgr.shape[:2]
-    ratio = min(DET_SIZE[0] / w, DET_SIZE[1] / h)
-    resized = cv2.resize(img_bgr, (round(w * ratio), round(h * ratio)))
-    canvas = np.zeros((DET_SIZE[1], DET_SIZE[0], 3), dtype=np.float32)
-    canvas[: resized.shape[0], : resized.shape[1]] = resized
-    blob = ((canvas - 127.5) / 127.5).transpose(2, 0, 1)[None].astype(np.float32)
+    blob, ratio = detector_blob(img_bgr)
 
     outputs = det_sess.run(None, {det_sess.get_inputs()[0].name: blob})
     n = len(STRIDES)
     all_scores, all_boxes, all_kps = [], [], []
     for i, stride in enumerate(STRIDES):
-        scores = outputs[i][0]          # (A, 1)
-        bbox_d = outputs[i + n][0]      # (A, 4)
-        kps_d = outputs[i + 2 * n][0]   # (A, 10)
+        # buffalo_l release 的输出可能是 (A,C) 或 (1,A,C)，统一展平批维。
+        scores = outputs[i].reshape(-1, 1)
+        bbox_d = outputs[i + n].reshape(-1, 4)
+        kps_d = outputs[i + 2 * n].reshape(-1, 10)
 
         H, W = DET_SIZE[1] // stride, DET_SIZE[0] // stride
         centers = np.stack(np.mgrid[:H, :W][::-1], -1).astype(np.float32)  # (H, W, 2)
         centers = (centers * stride).reshape(-1, 2)
         centers = np.repeat(centers, 2, axis=0)  # 每格 2 个 anchor -> (A, 2)
 
-        bbox = np.concatenate(
-            [centers - bbox_d[:, :2] * stride, centers + bbox_d[:, 2:] * stride], axis=1)
+        bbox = np.concatenate([centers - bbox_d[:, :2] * stride, centers + bbox_d[:, 2:] * stride], axis=1)
         kps_x = centers[:, :1] + kps_d[:, 0::2] * stride
         kps_y = centers[:, 1:] + kps_d[:, 1::2] * stride
         kps = np.stack([kps_x, kps_y], -1).reshape(-1, 10)
@@ -117,18 +148,21 @@ def detect_faces(det_sess, img_bgr: np.ndarray, det_thresh: float = 0.5) -> np.n
 def align_face(img_bgr: np.ndarray, kps: np.ndarray) -> np.ndarray:
     """5 点相似变换对齐到 112x112（ArcFace 标准输入）。"""
     src = np.asarray(kps, dtype=np.float32).reshape(5, 2)
-    dst = ARCFACE_DST
-    # 求解仿射 M (2x3): [x'] = M @ [x, y, 1]
-    A = np.hstack([src, np.ones((5, 1), np.float32)])
-    B = np.hstack([dst, np.ones((5, 1), np.float32)])
-    M = np.linalg.lstsq(A, B, rcond=None)[0][:2]
-    return cv2.warpAffine(img_bgr, M, (112, 112), borderValue=0)
+    matrix, _ = cv2.estimateAffinePartial2D(src, ARCFACE_DST, method=cv2.LMEDS)
+    if matrix is None:
+        raise RuntimeError("无法根据 5 点关键点估计人脸相似变换")
+    return cv2.warpAffine(img_bgr, matrix, (112, 112), borderValue=0)
+
+
+def arcface_blob(aligned_bgr: np.ndarray) -> np.ndarray:
+    """ArcFace 标准 RGB、[-1, 1]、NCHW 预处理。"""
+    blob = aligned_bgr[:, :, ::-1].astype(np.float32)
+    return ((blob - 127.5) / 127.5).transpose(2, 0, 1)[None]
 
 
 def arcface_embed(rec_sess, img_bgr: np.ndarray, kps: np.ndarray) -> np.ndarray:
     aligned = align_face(img_bgr, kps)
-    blob = aligned[:, :, ::-1].astype(np.float32)      # BGR -> RGB
-    blob = ((blob - 127.5) / 127.5).transpose(2, 0, 1)[None]
+    blob = arcface_blob(aligned)
     emb = rec_sess.run(None, {rec_sess.get_inputs()[0].name: blob})[0][0]
     return emb / np.linalg.norm(emb)
 
@@ -137,17 +171,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--a", default=None)
     parser.add_argument("--b", default=None)
-    parser.add_argument("--thresh", type=float, default=0.35,
-                        help="cosine 阈值，insightface 官方推荐 ~0.35")
+    parser.add_argument("--thresh", type=float, default=0.35, help="cosine 阈值，insightface 官方推荐 ~0.35")
+    parser.add_argument("--det-thresh", type=float, default=0.5)
+    parser.add_argument("--threads", type=int, default=0, help="ONNX Runtime intra-op 线程数；0 表示默认")
     args = parser.parse_args()
 
     from common.utils import download
-    path_a = args.a or download(
-        "https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img1.jpg", "face1.jpg")
-    path_b = args.b or download(
-        "https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img2.jpg", "face2.jpg")
 
-    sessions = ensure_models()
+    path_a = args.a or download(
+        "https://raw.githubusercontent.com/opencv/opencv/master/samples/data/lena.jpg",
+        "lena.jpg",
+    )
+    path_b = args.b or download(
+        "https://raw.githubusercontent.com/deepinsight/insightface/master/"
+        "python-package/insightface/data/images/t1.jpg",
+        "faces_t1.jpg",
+    )
+
+    sessions = ensure_models(args.threads)
     print(f"[INFO] loaded ONNX: {sorted(sessions)}")
     det, rec = sessions["det_10g"], sessions["w600k_r50"]
 
@@ -157,7 +198,7 @@ def main():
         if img is None:
             print(f"[ERROR] 无法读取 {p}")
             return
-        dets = detect_faces(det, img)
+        dets = detect_faces(det, img, args.det_thresh)
         if len(dets) == 0:
             print(f"[WARN] {p} 未检测到人脸（换 --a/--b 传自己的人脸照片）")
             return

@@ -44,7 +44,7 @@
 2. 替换 classifier 最后 Linear：`model.classifier[-1] = nn.Linear(1024, n_classes)`
 3. 数据增强：RandomResizedCrop(scale 0.7~1.0)、HorizontalFlip；进阶：Mixup/CutMix/RandAugment
 4. AdamW(3e-4) + Cosine + CrossEntropy
-5. AMP fp16 autocast（MPS 原生支持）
+5. 可选 MPS fp16 autocast，并保存完整训练配置
 
 **从零训练 ImageNet 注意**（区别于迁移）：需要 128 万张图/90 epoch，蒸馏版用 teacher（大模型 soft label）提升 1~3 个点——V3 论文本身就是蒸馏训练的。
 
@@ -77,13 +77,13 @@
 本工程完整实现了 **静态 PTQ 三步曲**，面试可全程白板：
 
 ```python
-# ① 模块融合: Conv+BN+ReLU → 一个算子（浮点域做，量化前）
-fused = copy.deepcopy(fp32); fused.fuse_model()
-# ② 插桩 + 校准: QuantStub/DeQuantStub 定义量化边界；校准数据过一遍记录激活 min/max
-wrapped = QuantWrapper(fused)
-wrapped.qconfig = torch.ao.quantization.get_default_qconfig("qnnpack")  # ARM 后端
-prepared = torch.ao.quantization.prepare(wrapped)
-calibrate(prepared, calib_data)        # 100~500 张代表数据即可
+# ① 使用 torchvision 的 QuantizableMobileNetV3 并载入浮点权重
+quantizable.load_state_dict(fp32.state_dict())
+quantizable.fuse_model(is_qat=False)
+# ② 插入 observer；校准数据前向记录激活范围
+quantizable.qconfig = torch.ao.quantization.get_default_qconfig("qnnpack")
+prepared = torch.ao.quantization.prepare(quantizable)
+calibrate(prepared, calib_data)  # 100~500 张代表数据即可
 # ③ 转换: 观察器换成真正的量化算子
 qmodel = torch.ao.quantization.convert(prepared)
 ```
@@ -91,7 +91,7 @@ qmodel = torch.ao.quantization.convert(prepared)
 | 路线 | 特点 | 预期 |
 |---|---|---|
 | **动态量化** | 只 Linear 权重 int8，免校准 | small: 提速有限（模型以卷积为主） |
-| **静态 PTQ（卷积也 int8）** | 需校准数据 + 融合 | 内存 9.7MB→2.5MB，CPU 提速 1.5~3x，top-1 掉 0.5~1% |
+| **静态 PTQ（卷积也 int8）** | 需校准数据 + 融合 | 通常显著减小；延迟和 top-1 以验证集实测为准 |
 | **QAT 量化感知训练** | 训练期插伪量化节点 | 精度几乎无损（<0.3%），成本高 |
 | **torch.compile** | Inductor kernel 融合 | 1.2~2x |
 | **批量推理** | 多图拼 batch | 吞吐近线性 |

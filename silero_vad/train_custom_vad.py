@@ -1,17 +1,17 @@
 """自定义小 VAD 训练：当业务域与 Silero 不匹配时，训练自己的轻量 VAD。
 
-模型: 40 维 log-mel + 4 层 1D-CNN（~100K 参数，比 Silero 还小）
+模型: 40 维 log-mel + 4 层空洞 1D-CNN（~75K 参数，比 Silero 还小）
 数据: 两个目录 speech/ 与 noise/ 各放若干 wav（16kHz）
       不提供数据时会生成合成数据跑通流程
 
 用法:
     python -m silero_vad.train_custom_vad --speech_dir data/speech --noise_dir data/noise
 """
+
 import argparse
 import os
 
 import numpy as np
-import soundfile as sf
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,65 +20,94 @@ import torch.nn.functional as F
 class TinyVAD(nn.Module):
     """帧级二分类: (B, T, 40) -> (B, T) 语音概率。"""
 
-    def __init__(self, n_mels: int = 40):
+    def __init__(self, n_mels: int = 40, channels: int = 64):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv1d(n_mels, 64, 5, padding=2), nn.ReLU(),
-            nn.Conv1d(64, 64, 5, padding=2), nn.ReLU(), nn.MaxPool1d(2),
-            nn.Conv1d(64, 128, 5, padding=2), nn.ReLU(),
+            nn.Conv1d(n_mels, channels, 5, padding=2),
+            nn.ReLU(),
+            nn.Conv1d(channels, channels, 5, padding=4, dilation=2),
+            nn.ReLU(),
+            nn.Conv1d(channels, channels, 5, padding=8, dilation=4),
+            nn.ReLU(),
+            nn.Conv1d(channels, channels, 5, padding=16, dilation=8),
+            nn.ReLU(),
         )
-        self.head = nn.Linear(128, 1)
+        self.head = nn.Linear(channels, 1)
 
     def forward(self, x):  # x: (B, T, n_mels)
-        h = self.conv(x.transpose(1, 2))       # (B, C, T')
+        h = self.conv(x.transpose(1, 2))  # (B, C, T')
         h = h.permute(0, 2, 1)
-        return self.head(h).squeeze(-1)        # (B, T')
+        return self.head(h).squeeze(-1)  # (B, T')
 
 
 def logmel(wav: np.ndarray, sr=16000, n_mels=40, frame=400, hop=160):
-    """简易 log-mel（避免依赖 librosa 的训练路径）。"""
-    frames = 1 + max(len(wav) - frame, 0) // hop
-    win = np.hanning(frame).astype(np.float32)
-    spec = np.empty((frames, frame // 2 + 1), dtype=np.float32)
-    for i in range(frames):
-        seg = wav[i * hop: i * hop + frame]
-        if len(seg) < frame:
-            seg = np.pad(seg, (0, frame - len(seg)))
-        spec[i] = np.abs(np.fft.rfft(seg * win)) ** 2
-    mel_fb = np.random.RandomState(0).rand(n_mels, spec.shape[-1]).astype(np.float32) * 0.01 + 0.1
-    mel = spec @ mel_fb.T
-    return np.log(mel + 1e-8)
+    """真实 Mel 滤波器组特征，输出 (T, n_mels)，关闭居中填充便于流式对齐。"""
+    import librosa
+
+    mel = librosa.feature.melspectrogram(
+        y=np.asarray(wav, dtype=np.float32),
+        sr=sr,
+        n_fft=512,
+        win_length=frame,
+        hop_length=hop,
+        n_mels=n_mels,
+        power=2.0,
+        center=False,
+    )
+    return np.log(np.maximum(mel, 1e-8)).T.astype(np.float32)
 
 
 def build_dataset(speech_dir=None, noise_dir=None, n_per_class=64, sec=2.0, sr=16000):
-    """有目录用真实数据，否则合成数据（跑通用）。"""
+    """有两个目录时采样真实数据，否则生成可重复的合成数据。"""
     xs, ys = [], []
     rng = np.random.RandomState(0)
-    n_frames = int(sec * sr / 160)
+    segment_samples = int(sec * sr)
+
+    def crop_or_pad(wav):
+        wav = np.asarray(wav, dtype=np.float32)
+        if len(wav) < segment_samples:
+            return np.pad(wav, (0, segment_samples - len(wav)))
+        start = rng.randint(0, len(wav) - segment_samples + 1)
+        return wav[start : start + segment_samples]
 
     def add(wav, label):
-        for _ in range(max(1, n_per_class // max(len(wav) // int(sr * sec), 1))):
-            start = rng.randint(0, max(len(wav) - int(sr * sec), 1))
-            seg = wav[start: start + int(sr * sec)]
-            m = logmel(seg)
-            if len(m) >= n_frames:
-                xs.append(m[:n_frames])
-                ys.append(np.full(n_frames, label, dtype=np.float32))
+        feature = logmel(crop_or_pad(wav), sr=sr)
+        xs.append(feature)
+        ys.append(np.full(len(feature), label, dtype=np.float32))
 
-    if speech_dir and os.path.isdir(speech_dir):
-        for f in sorted(os.listdir(speech_dir))[:50]:
-            if f.endswith((".wav", ".flac")):
-                add(sf.read(os.path.join(speech_dir, f), dtype="float32")[0], 1)
-        for f in sorted(os.listdir(noise_dir))[:50]:
-            if f.endswith((".wav", ".flac")):
-                add(sf.read(os.path.join(noise_dir, f), dtype="float32")[0], 0)
+    have_speech = bool(speech_dir and os.path.isdir(speech_dir))
+    have_noise = bool(noise_dir and os.path.isdir(noise_dir))
+    if have_speech != have_noise:
+        raise ValueError("真实数据训练必须同时提供有效的 --speech-dir 和 --noise-dir")
+
+    if have_speech and have_noise:
+        from common.utils import load_audio_mono
+
+        def load_pool(root):
+            paths = [
+                os.path.join(root, f)
+                for f in sorted(os.listdir(root))
+                if f.lower().endswith((".wav", ".flac"))
+            ]
+            if not paths:
+                raise ValueError(f"目录中没有 wav/flac: {root}")
+            return [load_audio_mono(p, target_sr=sr)[0] for p in paths[:50]]
+
+        speech_pool, noise_pool = load_pool(speech_dir), load_pool(noise_dir)
+        for i in range(n_per_class):
+            add(speech_pool[i % len(speech_pool)], 1)
+            add(noise_pool[i % len(noise_pool)], 0)
     else:
         print("[WARN] 未提供数据目录，使用合成数据演示流程")
-        t = np.linspace(0, sec, int(sr * 60), endpoint=False)
-        speech = np.sin(2 * np.pi * (200 + 300 * np.sin(2 * np.pi * 3 * t)) * t) * 0.3
-        add(speech, 1)
-        noise = rng.randn(len(t)) * 0.05
-        add(noise, 0)
+        t = np.arange(segment_samples, dtype=np.float32) / sr
+        for _ in range(n_per_class):
+            f0 = rng.uniform(100, 260)
+            envelope = 0.5 + 0.5 * np.sin(2 * np.pi * rng.uniform(2, 5) * t)
+            speech = envelope * (np.sin(2 * np.pi * f0 * t) + 0.4 * np.sin(2 * np.pi * 2 * f0 * t))
+            speech = speech.astype(np.float32) * 0.15 + rng.randn(segment_samples).astype(np.float32) * 0.01
+            noise = rng.randn(segment_samples).astype(np.float32) * rng.uniform(0.02, 0.12)
+            add(speech, 1)
+            add(noise, 0)
 
     x = torch.tensor(np.stack(xs), dtype=torch.float32)
     y = torch.tensor(np.stack(ys), dtype=torch.float32)
@@ -87,27 +116,37 @@ def build_dataset(speech_dir=None, noise_dir=None, n_per_class=64, sec=2.0, sr=1
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--speech_dir", default=None)
-    parser.add_argument("--noise_dir", default=None)
+    parser.add_argument("--speech-dir", default=None)
+    parser.add_argument("--noise-dir", default=None)
     parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--channels", type=int, default=64)
+    parser.add_argument("--samples-per-class", type=int, default=64)
+    parser.add_argument("--clip-seconds", type=float, default=2.0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", default="tiny_vad.pt")
     args = parser.parse_args()
 
-    from common.utils import get_device
+    from common.utils import get_device, seed_everything
+
+    seed_everything(args.seed)
     device = get_device()
-    x, y = build_dataset(args.speech_dir, args.noise_dir)
+    x, y = build_dataset(
+        args.speech_dir, args.noise_dir, n_per_class=args.samples_per_class, sec=args.clip_seconds
+    )
     print(f"[DATA] x={tuple(x.shape)}, y={tuple(y.shape)}, device={device}")
 
-    model = TinyVAD().to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=3e-4)
+    model = TinyVAD(channels=args.channels).to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     x, y = x.to(device), y.to(device)
     n = len(x)
     for epoch in range(args.epochs):
         model.train()
         perm = torch.randperm(n, device=device)
         tot = 0.0
-        for i in range(0, n, 16):
-            idx = perm[i: i + 16]
+        for i in range(0, n, args.batch):
+            idx = perm[i : i + args.batch]
             logits = model(x[idx])
             loss = F.binary_cross_entropy_with_logits(logits, y[idx])
             opt.zero_grad()
@@ -116,7 +155,19 @@ def main():
             tot += loss.item() * len(idx)
         print(f"epoch {epoch + 1}/{args.epochs} loss={tot / n:.4f}")
 
-    torch.save(model.state_dict(), args.out)
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "config": {
+                "n_mels": 40,
+                "channels": args.channels,
+                "sample_rate": 16000,
+                "frame": 400,
+                "hop": 160,
+            },
+        },
+        args.out,
+    )
     n_params = sum(p.numel() for p in model.parameters())
     print(f"[DONE] {n_params / 1e3:.0f}K params, saved -> {args.out}")
 

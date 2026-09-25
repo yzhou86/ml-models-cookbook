@@ -9,6 +9,7 @@ MobileNetV3-Small: ~2.5M 参数; Large: ~5.4M
 用法:
     python -m mobilenet_v3.train --data data/imagenet_like --epochs 10
 """
+
 import argparse
 import os
 import time
@@ -20,11 +21,14 @@ from torchvision import datasets, models, transforms
 
 
 def build_dataset(root: str, imgsz: int = 160):
-    train_tf = transforms.Compose([
-        transforms.RandomResizedCrop(imgsz, scale=(0.7, 1.0)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ])
+    train_tf = transforms.Compose(
+        [
+            transforms.RandomResizedCrop(imgsz, scale=(0.7, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ]
+    )
     if os.path.isdir(root):
         ds = datasets.ImageFolder(root, transform=train_tf)
         return ds, len(ds.classes)
@@ -42,11 +46,20 @@ def main():
     parser.add_argument("--imgsz", type=int, default=160)
     parser.add_argument("--variant", choices=["small", "large"], default="small")
     parser.add_argument("--freeze", action="store_true", help="只训练分类头（小内存技巧）")
+    parser.add_argument("--batch", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--weight-decay", type=float, default=1e-2)
+    parser.add_argument("--workers", type=int, default=0, help="macOS 建议先用 0；数据量大时试 2/4")
+    parser.add_argument("--device", choices=["auto", "mps", "cpu", "cuda"], default="auto")
+    parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", default="mobilenetv3.pt")
     args = parser.parse_args()
 
-    from common.utils import get_device
-    device = get_device()
+    from common.utils import get_device, seed_everything
+
+    seed_everything(args.seed)
+    device = get_device(args.device)
 
     if args.variant == "small":
         model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
@@ -62,21 +75,31 @@ def main():
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    print(f"[INFO] {args.variant}: total={total / 1e6:.1f}M, trainable={trainable / 1e6:.1f}M, classes={n_classes}, device={device}")
+    print(
+        f"[INFO] {args.variant}: total={total / 1e6:.1f}M, trainable={trainable / 1e6:.1f}M, classes={n_classes}, device={device}"
+    )
 
     model = model.to(device)
-    loader = DataLoader(ds, batch_size=32, shuffle=True, num_workers=0)
-    opt = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=3e-4)
+    loader = DataLoader(
+        ds, batch_size=args.batch, shuffle=True, num_workers=args.workers, persistent_workers=args.workers > 0
+    )
+    opt = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.weight_decay
+    )
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     criterion = nn.CrossEntropyLoss()
 
     for epoch in range(args.epochs):
         model.train()
+        if args.freeze:
+            model.features.eval()  # 冻结时同时固定 BatchNorm 统计量
         t0, total_loss, correct, count = time.time(), 0.0, 0, 0
         for x, y in loader:
             x, y = x.to(device), y.to(device).long()
             # AMP: M 芯片上 fp16 autocast 有效（不需要 GradScaler）
-            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=device.type == "mps"):
+            with torch.autocast(
+                device_type=device.type, dtype=torch.float16, enabled=args.amp and device.type == "mps"
+            ):
                 logits = model(x)
                 loss = criterion(logits, y)
             opt.zero_grad()
@@ -86,11 +109,19 @@ def main():
             correct += (logits.argmax(1) == y).sum().item()
             count += len(y)
         sched.step()
-        print(f"epoch {epoch + 1}/{args.epochs} loss={total_loss / count:.4f} "
-              f"acc={correct / count:.3f} ({time.time() - t0:.1f}s)")
+        print(
+            f"epoch {epoch + 1}/{args.epochs} loss={total_loss / count:.4f} "
+            f"acc={correct / count:.3f} ({time.time() - t0:.1f}s)"
+        )
 
-    torch.save({"state_dict": model.state_dict(), "classes": ds.classes if hasattr(ds, 'classes') else None},
-               args.out)
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "classes": ds.classes if hasattr(ds, "classes") else None,
+            "config": vars(args),
+        },
+        args.out,
+    )
     print(f"[DONE] saved -> {args.out}")
 
 

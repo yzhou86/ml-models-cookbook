@@ -36,6 +36,7 @@
 
 ```python
 from ultralytics import YOLO
+
 YOLO("yolo11n.pt").train(data="coco8.yaml", imgsz=320, epochs=10, device="mps")
 ```
 
@@ -55,7 +56,7 @@ YOLO("yolo11n.pt").train(data="coco8.yaml", imgsz=320, epochs=10, device="mps")
 
 | 超参 | 默认 | 经验 |
 |---|---|---|
-| lr0 | 0.01 (SGD) | 迁移学习可降 0.001 AdamW；loss 震荡升 warmup |
+| lr0 | 本工程默认 0.001 (AdamW) | 大批量或从头训练可适当提高；loss 震荡时增加 warmup |
 | imgsz | 640 | 小目标检测升到 1280（显存允许）；速度敏感降到 416 |
 | batch | 16 | 大显存开大 batch 稳梯度；M5 建议 16@320 或 8@640 |
 | mosaic | 1.0 | 小数据集减到 0.3~0.5 |
@@ -79,14 +80,14 @@ YOLO("yolo11n.pt").train(data="coco8.yaml", imgsz=320, epochs=10, device="mps")
 | 手段 | 原理 | 实测预期 |
 |---|---|---|
 | **ONNX Runtime** | 图优化算子融合 | CPU 与 PyTorch 持平或略快；跨平台去 Python 依赖 |
-| **ONNX int8 动态量化** | 权重 QInt8 | 模型 6.5MB→1.7MB，CPU 提速 1.5~2.5x，mAP 掉 0.5~1.5 |
+| **ONNX int8 静态 PTQ** | QDQ + 代表性图片校准 | 卷积和激活可进入 int8；需重新验证 mAP 与算子支持 |
 | **TensorRT** (NVIDIA) | int8 + 层融合 + kernel auto-tune | GPU 上 3~5x（Mac 无，但面试必背） |
 | **CoreML** | macOS 原生 ANE/GPU | M 芯片部署首选，本工程演示导出 |
 | **ncnn/TFLite** | 移动端 | 手机端 8ms@FP16 |
 | **batch + 视频跳帧** | 多路视频拼 batch；抽帧检测 | 吞吐线性提升 |
 | **输入下采样 + 模型换小** | n@416 比 x@640 快 10x+ | 速度优先时先减 imgsz 再换大模型 |
 
-**导出一张表（面试背）**：`model.export(format="onnx/coreml/engine/tflite/ncnn/openvino")`，全部半精度选项 + int8 选项，导出后用对应 runtime 加载。
+优化脚本对 PyTorch、ONNX 和 int8 都使用相同图片、预处理、解码与 NMS，测的是端到端延迟。CoreML 用 `--coreml` 按需导出。
 
 ## 7. 面试 Q&A
 

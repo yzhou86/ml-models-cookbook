@@ -1,106 +1,136 @@
-# ML Models Cookbook（uv + Apple Silicon M5 面试实战工程）
+# ML Models Cookbook
 
-面向算法岗面试的 **小模型训练 / 推理 / 优化加速** 实战工程，覆盖 **语音** 与 **视觉** 两大赛道共 6 个模型。所有代码在 **MacBook Air M5（24GB）** 上验证可行：训练走 `mps` 后端，量化推理走 CPU（`qnnpack` 后端）。依赖由 [uv](https://docs.astral.sh/uv/) 管理。
+面向算法工程面试和 Apple Silicon 实践的六模型实验集，覆盖训练、推理、量化、ONNX、CoreML、MPS 与性能验证。默认目标机器是 **MacBook Air M5 / 24GB 统一内存**；所有默认配置都优先保证这类无风扇设备能够完成，而不是追求服务器级吞吐。
 
-## 六大模型速览
+## 先读这三份文档
 
-| # | 模型 | 任务 | 参数量 | 核心架构 | 本工程演示的优化 |
-|---|---|---|---|---|---|
-| 1 | **Whisper tiny/base/small** | 语音识别 ASR | 39M / 74M / 244M | Encoder-Decoder Transformer（log-mel → 文本） | int8 动态量化、torch.compile、冻结 encoder 微调 |
-| 2 | **Silero VAD** | 语音活动检测 | ~2M | 1D-CNN + GRU（512 样本滑窗） | ONNX Runtime 加速、自训轻量 VAD |
-| 3 | **ECAPA-TDNN** | 说话人识别/声纹 | ~22M | Res2Net 风格 TDNN + SE-Block + AAM-Softmax | int8 量化、TorchScript、冻结骨干微调 |
-| 4 | **YOLO11n** | 目标检测 | ~2.6M | CSPNet backbone + PAFPN 颈部 + 解耦头 | ONNX 导出 + int8 量化 + CoreML 原生部署 |
-| 5 | **MobileNetV3** | 图像分类 | 2.5M(small) / 5.4M(large) | 深度可分离卷积 + SE + h-swish | 静态 PTQ（校准量化）、动态量化、AMP 训练 |
-| 6 | **InsightFace (SCRFD + ArcFace)** | 人脸检测+识别 | 16M + 88M(ONNX) | SCRFD anchor-free 检测 + 5 点对齐 + ArcFace 角度间隔 | ONNX int8 量化（170MB→45MB） |
+- [M5 安装、调参与性能测试](docs/M5_SETUP_AND_BENCHMARK.md)
+- [面试知识体系与高频追问](docs/INTERVIEW_GUIDE.md)
+- [实验记录模板](docs/EXPERIMENT_TEMPLATE.md)
+- [本机验证矩阵与 smoke benchmark](docs/VALIDATION_M5.md)
 
-## 项目结构
+每个模型目录还有独立 README，包含架构、损失、指标和业务落地问题。
 
-```
-ml-models-cookbook/
-├── pyproject.toml           # uv 依赖清单
-├── common/utils.py          # 设备检测（mps/cuda/cpu）、计时、基准测试
-├── whisper_asr/             # 1. Whisper（ASR）        + README.md 面试详解
-├── silero_vad/              # 2. Silero VAD            + README.md 面试详解
-├── ecapa_tdnn/              # 3. ECAPA-TDNN（声纹）     + README.md 面试详解
-├── yolo11n/                 # 4. YOLO11n（检测）       + README.md 面试详解
-├── mobilenet_v3/            # 5. MobileNetV3（分类）   + README.md 面试详解
-├── insightface_arcface/     # 6. InsightFace（人脸）    + README.md 面试详解
-└── samples/                 # 自动下载的示例数据
-```
+## 模型地图
 
-每个模块统一三件套：`train*.py`（训练）、`infer.py`（推理）、`optimize.py`（优化加速 + 基准对比），并配有一份可直接背的 `README.md` 面试详解。
+| 模型 | 任务 | 默认运行后端 | 本工程重点 |
+|---|---|---|---|
+| Whisper tiny/base/small | ASR | MPS 浮点 / CPU int8 | 冻结 Encoder、梯度累积、动态量化、compile |
+| Silero VAD | 语音切段 | CPU | 有状态滑窗、迟滞阈值、JIT vs ONNX |
+| ECAPA-TDNN | 声纹 | CPU 骨干 / MPS 分类头 | embedding 缓存、AAM-Softmax、动态量化 |
+| YOLO11n | 检测 | MPS / ONNX CPU / CoreML | 端到端公平基准、静态 PTQ、导出 |
+| MobileNetV3 | 分类 | MPS / CPU int8 | 迁移学习、冻结 BN、静态 PTQ |
+| SCRFD + ArcFace | 人脸验证 | ONNX CPU | 检测、5 点相似变换、QDQ 静态 PTQ |
 
-## 安装（uv）
+> 重要原则：MPS 适合浮点训练与推理；PyTorch int8/qnnpack 和 ONNX Runtime int8 主要运行在 CPU。小 batch、小模型不保证 GPU 更快，必须实测。
+
+## 在 M5 上安装
+
+推荐让 `uv` 管理独立 Python 3.12，避免系统 Python 或过新的 Python 缺少 ML wheel：
 
 ```bash
-cd ml-models-cookbook
+brew install uv
+uv python install 3.12
+uv sync --python 3.12
 
-# 若尚未安装 uv（macOS）：
-#   brew install uv
-#   或官方脚本: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 一键创建虚拟环境并安装全部依赖（uv 自动解析 arm64 wheel）
-uv sync
-
-# 之后所有脚本用 uv run 启动，自动使用正确环境
-uv run python -m whisper_asr.infer
+# 需要 YOLO CoreML 导出时
+uv sync --python 3.12 --extra apple
 ```
 
-单独添加依赖示例：`uv add onnxruntime`；进入环境：`source .venv/bin/activate`。
-
-## 快速体验
+先跑不下载大模型的回归测试：
 
 ```bash
-uv run python -m whisper_asr.infer            # Whisper ASR（自动下载 whisper-tiny）
-uv run python -m silero_vad.infer             # VAD 时间戳检测
-uv run python -m ecapa_tdnn.infer             # 声纹验证（同段音频自比较）
-uv run python -m yolo11n.infer                # YOLO 检测 + 可视化
-uv run python -m mobilenet_v3.infer          # ImageNet 分类 Top5
-uv run python -m insightface_arcface.infer   # 人脸比对（首次下载 ~280MB）
-
-# 优化加速对比（面试演示重点）
-uv run python -m mobilenet_v3.optimize       # 静态 PTQ 全流程 + 延迟对比
-uv run python -m whisper_asr.optimize        # fp32 vs int8 vs compile
-uv run python -m yolo11n.optimize             # ONNX + int8 + CoreML 导出
-uv run python -m insightface_arcface.optimize # ArcFace ONNX 量化
-
-# 训练
-uv run python -m yolo11n.train                # YOLO（MPS）
-uv run python -m mobilenet_v3.train           # 分类（AMP 半精度）
-uv run python -m whisper_asr.train_finetune  # Whisper 冻结 encoder 微调
-uv run python -m silero_vad.train_custom_vad  # 自训 100K 参数 VAD
-uv run python -m insightface_arcface.train    # ArcFace loss 从零实现
-uv run python -m ecapa_tdnn.train             # 声纹分类微调（需自备数据）
+uv run pytest
+uv run ruff check .
 ```
 
-## 优化技术地图（面试总纲）
+首次运行各模块会下载公开预训练权重。InsightFace `buffalo_l` 约 280MB，Whisper/ECAPA 也会写入各自框架的用户缓存。
 
-| 技术 | 原理一句话 | 本工程落点 |
+## 推理
+
+```bash
+uv run python -m whisper_asr.infer --model tiny --language en
+uv run python -m silero_vad.infer
+uv run python -m ecapa_tdnn.infer
+uv run python -m mobilenet_v3.infer --variant small
+uv run python -m yolo11n.infer --device auto
+uv run python -m insightface_arcface.infer --threads 4
+```
+
+所有音频入口都会转为单声道 16kHz。`--device auto` 在 Apple Silicon 上选择 MPS；ECAPA 默认 CPU，因为 SpeechBrain 的部分算子在 MPS 上覆盖不完整。
+
+## M5 24GB 安全训练预设
+
+```bash
+# 先冻结 Whisper Encoder；等效 batch=4
+uv run python -m whisper_asr.train_finetune \
+  --model tiny --batch 2 --grad-accum 2 --epochs 2
+
+# 无真实数据时生成合成数据验证形状和训练循环
+uv run python -m silero_vad.train_custom_vad --epochs 2 --samples-per-class 32
+
+# ImageFolder 迁移学习，先冻结骨干、160 分辨率
+uv run python -m mobilenet_v3.train \
+  --data data/images --freeze --imgsz 160 --batch 32 --epochs 10
+
+# Ultralytics 自动下载 coco8；320 用于快速调参
+uv run python -m yolo11n.train --imgsz 320 --batch 16 --epochs 10
+
+# 已对齐的人脸 ImageFolder；小数据先冻结 MobileNetV2 骨干
+uv run python -m insightface_arcface.train \
+  --data data/faces --freeze-backbone --batch 32 --epochs 10
+
+# 先预计算冻结的 ECAPA embedding，再快速训练业务分类头
+uv run python -m ecapa_tdnn.train --data data/spk --batch 64 --epochs 20
+```
+
+如果出现内存压力，依次降低 `batch`、输入分辨率或模型尺寸，再开启梯度检查点；不要把 swap 当成正常训练内存。
+
+## 优化与可复现实验
+
+```bash
+uv run python -m whisper_asr.optimize --model tiny --runs 5 --skip-compile
+uv run python -m silero_vad.optimize --threads 4 --runs 20
+uv run python -m ecapa_tdnn.optimize --runs 20
+
+# 正式 PTQ 应传 100~500 张部署分布图片
+uv run python -m mobilenet_v3.optimize --calib-dir data/calibration --runs 20
+uv run python -m yolo11n.optimize --calib-dir data/calibration --runs 10 --coreml
+uv run python -m insightface_arcface.optimize --threads 4 --runs 20
+```
+
+优化脚本遵循四条规则：
+
+1. 先预热，再同步 MPS/CUDA 后计时。
+2. 比较端到端延迟时使用相同输入、预处理和后处理。
+3. 除延迟外，同时报告模型大小和输出一致性。
+4. 示例数据只能证明流程可运行；量化精度必须在真实验证集上报告。
+
+建议至少记录 latency mean/p50/p95、吞吐、峰值内存、模型大小和任务指标。不要只展示“快了几倍”。
+
+## 可调参数入口
+
+| 类别 | 常用参数 | 主要权衡 |
 |---|---|---|
-| **动态量化** | Linear 权重 int8，激活动态量化，免校准 | whisper / ecapa / mobilenet / arcface |
-| **静态量化 (PTQ)** | MinMax observer 校准 + Conv/BN/ReLU 融合 | `mobilenet_v3/optimize.py`（含 QuantStub 包装） |
-| **ONNX Runtime** | 图优化 + 算子融合，跨平台推理引擎 | silero / yolo / arcface |
-| **int8 ONNX 量化** | 权重 QInt8，零校准成本 | `yolo11n/optimize.py`、`insightface_arcface/optimize.py` |
-| **torch.compile** | Inductor 算子融合 + kernel 生成 | whisper / mobilenet（失败自动降级） |
-| **TorchScript** | 图模式执行，消除 Python 开销 | ecapa / silero |
-| **CoreML** | macOS/iOS 原生 GPU 加速 | `yolo11n/optimize.py` 导出 |
-| **AMP 混合精度** | 前向 fp16 反向 fp32，MPS 原生支持 | mobilenet / arcface 训练 |
-| **冻结微调** | 只训头部/decoder，小内存适配 | whisper / ecapa |
-| **知识蒸馏** | 教师(大)→学生(小) 软标签迁移 | 各模块 README 中讲解思路 |
-| **AAM/ArcFace Loss** | 角度间隔拉大类间距离 | ecapa / insightface 训练实现 |
+| 训练规模 | `--batch`, `--grad-accum`, `--imgsz` | 内存、吞吐、收敛稳定性 |
+| 优化器 | `--lr`, `--weight-decay`, `--warmup-ratio` | 收敛速度与过拟合 |
+| 迁移学习 | `--freeze`, `--freeze-backbone`, `--train_encoder` | 训练成本与域适配能力 |
+| 度量学习 | `--margin`, `--scale` | 类内紧致、类间间隔与训练难度 |
+| 部署 | `--threads`, `--runs`, `--calib-dir` | CPU 并发、测量方差、int8 精度 |
+| 检测/VAD | `--conf`, `--threshold`, `--min-silence-ms` | precision、recall 与响应延迟 |
 
-## Apple Silicon（M5 / 24GB）注意事项
+## 目录结构
 
-- 设备优先级 `mps > cuda > cpu`，统一由 `common/utils.py:get_device()` 决定
-- **量化模型只能跑 CPU**（qnnpack 后端），各 optimize 脚本已自动回退并保证对比公平
-- `torch.compile` 对 MPS 后端覆盖有限，代码用 try/except 保护，失败自动降级 fp32
-- SpeechBrain 的 ECAPA 部分算子 MPS 不支持，默认 CPU（22M 模型 CPU 推理 <50ms，够用）
-- 不要安装 `onnxruntime-gpu`，Mac 用普通 `onnxruntime`（CPU EP）
-- Whisper 训练显存不够时：冻结 encoder 或降到 tiny；M5 24GB 跑 small 全参微调可行但慢
+```text
+common/                   公共设备、下载、音频、随机种子和 benchmark
+whisper_asr/              ASR
+silero_vad/               官方 VAD 推理 + 自定义轻量 VAD
+ecapa_tdnn/               说话人 embedding / 分类适配
+mobilenet_v3/             图像分类与 PTQ
+yolo11n/                  目标检测、ONNX、CoreML
+insightface_arcface/      人脸检测、对齐、识别与 PTQ
+tests/                    无需下载模型的快速回归测试
+docs/                     M5 实操、面试与实验模板
+```
 
-## 面试冲刺路线建议
-
-1. **先跑通**：6 个 `infer.py` 全部体验一遍，建立手感
-2. **吃透两个深度案例**：`mobilenet_v3/optimize.py`（PTQ 完整原理）和 `insightface_arcface/infer.py`（检测→对齐→比对全链路）
-3. **背熟各模块 README.md 的「面试 Q&A」小节**——按面试官视角的高频问题整理
-4. **准备一条业务叙事线**：例如"长视频字幕生成：Silero VAD 切片 → Whisper int8 批量转写 → 字幕合并"，体现工程闭环能力
+运行产物默认写入 `samples/`、`runs/` 或命令指定的输出位置，并已加入 `.gitignore`。

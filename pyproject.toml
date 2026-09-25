@@ -1,32 +1,55 @@
 [project]
 name = "ml-models-cookbook"
-version = "0.1.0"
+version = "0.2.0"
 description = "小模型训练/推理/优化加速实战工程（Apple Silicon M 系列适配，面试向）"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
-    "torch>=2.3",
-    "torchvision>=0.18",
-    "torchaudio>=2.3",
-    "transformers>=4.41",
-    "datasets>=2.19",
-    "accelerate>=0.30",
-    "huggingface_hub>=0.23",
-    "evaluate>=0.4",
-    "speechbrain>=1.0",
-    "ultralytics>=8.3.0",
-    "onnxruntime>=1.17",
-    "onnx>=1.16",
-    "numpy<2.1",
-    "soundfile>=0.12",
-    "librosa>=0.10",
-    "scipy",
-    "matplotlib",
-    "scikit-learn",
-    "tqdm",
-    "requests",
-    "Pillow",
-    "opencv-python",
+    "torch>=2.3,<3",
+    "torchvision>=0.18,<1",
+    "torchaudio>=2.3,<3",
+    "transformers>=4.41,<5",
+    "datasets>=2.19,<4",
+    "accelerate>=0.30,<2",
+    "huggingface_hub>=0.23,<2",
+    "evaluate>=0.4,<1",
+    "jiwer>=3,<5",
+    "speechbrain>=1.0,<2",
+    "ultralytics>=8.3.0,<9",
+    "onnxruntime>=1.17,<2",
+    "onnx>=1.16,<2",
+    "onnxslim>=0.1.31,<1",
+    "numpy>=1.26,<2.1",
+    "soundfile>=0.12,<1",
+    "librosa>=0.10,<1",
+    "scipy>=1.11,<2",
+    "matplotlib>=3.8,<4",
+    "scikit-learn>=1.4,<2",
+    "tqdm>=4.66,<5",
+    "requests>=2.31,<3",
+    "Pillow>=10,<13",
+    "opencv-python>=4.9,<5",
+]
+
+[project.optional-dependencies]
+apple = ["coremltools>=8,<10"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<10",
+    "ruff>=0.6,<1",
 ]
 
 [tool.uv]
 # Apple Silicon: torch 系列默认从 PyPI 的 arm64 wheel 安装，无需额外 index
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

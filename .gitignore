@@ -16,7 +16,6 @@ pretrained_models/
 runs/
 *.onnx
 *.pt
-!yolo11n.pt
 *.mlpackage/
 whisper_finetuned/
 ecapa_finetuned/
