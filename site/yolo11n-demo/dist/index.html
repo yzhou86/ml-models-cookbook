@@ -81,6 +81,7 @@
     .scan-line { position: absolute; z-index: 3; left: 0; right: 0; top: -8%; height: 17%; opacity: 0; background: linear-gradient(to bottom, transparent, rgba(200,255,65,.08) 45%, rgba(200,255,65,.56) 50%, transparent); pointer-events: none; }
     .vision-stage.scanning .scan-line { opacity: 1; animation: scan 1.5s cubic-bezier(.45,0,.2,1); }
     @keyframes scan { from { transform: translateY(-10%); } to { transform: translateY(660%); } }
+    @keyframes boxIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
     .corner { position: absolute; width: 24px; height: 24px; z-index: 4; border-color: rgba(200,255,65,.9); pointer-events: none; }
     .corner.tl { left: 16px; top: 16px; border-left: 2px solid; border-top: 2px solid; }
     .corner.tr { right: 16px; top: 16px; border-right: 2px solid; border-top: 2px solid; }
@@ -110,6 +111,7 @@
     .run-button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; color: #132000; border: 0; border-radius: 12px; background: var(--lime); box-shadow: inset 0 -2px 0 rgba(47,78,0,.24); font-weight: 850; }
     .run-button:hover { background: #d8ff73; }
     .run-button.running { color: #e5f2f9; background: #24364e; box-shadow: none; }
+    .run-button:disabled { cursor: wait; opacity: .88; }
     .play-icon { width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid currentColor; }
     .run-button.running .play-icon { width: 10px; height: 12px; border: 0; background: currentColor; clip-path: polygon(0 0, 34% 0, 34% 100%, 0 100%, 0 0, 66% 0, 100% 0, 100% 100%, 66% 100%); }
     .control-group { padding: 17px 0; border-bottom: 1px solid #283a53; }
@@ -207,6 +209,11 @@
     footer { max-width: 1296px; margin: 78px auto 0; padding: 23px 0 35px; color: #728198; border-top: 1px solid var(--line); font-size: .78rem; }
     footer strong { color: #394861; }
 
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+
     @media (max-width: 1050px) {
       .lab { grid-template-columns: 1fr; }
       .control-card { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
@@ -271,7 +278,7 @@
         <article class="vision-card">
           <div class="card-head">
             <div class="card-title"><i class="camera-dot"></i>输入画面 · bus.jpg</div>
-            <span class="frame-count" id="frameInfo">FRAME 0184 · 810 × 1080</span>
+            <span class="frame-count" id="frameInfo">FRAME 0184 · 640 × 640</span>
           </div>
           <div class="vision-stage" id="visionStage">
             <img class="source-image" src="assets/bus.jpg" alt="街边公交车与行人的测试图片">
@@ -279,20 +286,20 @@
             <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span>
             <span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
             <div class="detection-layer" id="detectionLayer" aria-label="当前检测框"></div>
-            <div class="stage-status" id="stageStatus"><i class="status-mark"></i><span id="statusText">READY · 5 BOXES</span></div>
+            <div class="stage-status" id="stageStatus" role="status" aria-live="polite"><i class="status-mark"></i><span id="statusText">READY · 4 BOXES</span></div>
           </div>
           <div class="result-strip" aria-label="推理摘要">
-            <div class="mini-stat"><strong id="keptCount">5</strong><span>保留目标</span></div>
+            <div class="mini-stat"><strong id="keptCount">4</strong><span>保留目标</span></div>
             <div class="mini-stat"><strong id="suppressedCount">2</strong><span>NMS 抑制</span></div>
             <div class="mini-stat"><strong id="latencyValue">18.7 ms</strong><span>端到端延迟</span></div>
-            <div class="mini-stat"><strong id="precisionValue">0.76</strong><span>平均置信度</span></div>
+            <div class="mini-stat"><strong id="precisionValue">0.75</strong><span>平均置信度</span></div>
           </div>
         </article>
 
         <aside class="control-card" aria-label="检测参数">
           <header><h2>推理控制台</h2></header>
           <p>这是一次可解释的前端模拟：框和候选分数来自仓库中的示例推理结果，用于观察后处理逻辑。</p>
-          <button class="run-button" id="runButton" type="button"><i class="play-icon" aria-hidden="true"></i><span>运行一次检测</span></button>
+          <button class="run-button" id="runButton" type="button" aria-busy="false"><i class="play-icon" aria-hidden="true"></i><span>运行一次检测</span></button>
 
           <div class="control-group">
             <div class="control-line"><label class="control-label" for="confidence">置信度阈值</label><output class="control-value" id="confidenceValue">0.35</output></div>
@@ -307,9 +314,9 @@
           <div class="control-group">
             <div class="control-line"><span class="control-label">输入尺寸</span><output class="control-value" id="sizeValue">640 px</output></div>
             <div class="size-selector" role="group" aria-label="输入尺寸">
-              <button class="size-button" type="button" data-size="320">320</button>
-              <button class="size-button active" type="button" data-size="640">640</button>
-              <button class="size-button" type="button" data-size="1280">1280</button>
+              <button class="size-button" type="button" data-size="320" aria-pressed="false">320</button>
+              <button class="size-button active" type="button" data-size="640" aria-pressed="true">640</button>
+              <button class="size-button" type="button" data-size="1280" aria-pressed="false">1280</button>
             </div>
           </div>
           <div class="control-group">
@@ -339,11 +346,11 @@
           <article class="architecture">
             <div class="architecture-top"><div><h3>YOLO11n 检测链路</h3><p>从像素到可用结果，速度来自端到端设计。</p></div><span class="live-pill">ANCHOR-FREE</span></div>
             <div class="architect-flow" id="architectureFlow">
-              <button class="arch-node active" type="button" data-concept="input"><small>01 / INPUT</small><strong>Letterbox<br>缩放与填充</strong></button><i class="arch-arrow">→</i>
-              <button class="arch-node" type="button" data-concept="backbone"><small>02 / BACKBONE</small><strong>C3k2 · SPPF<br>视觉特征提取</strong></button><i class="arch-arrow">→</i>
-              <button class="arch-node" type="button" data-concept="neck"><small>03 / NECK</small><strong>PAFPN<br>多尺度融合</strong></button><i class="arch-arrow">→</i>
-              <button class="arch-node" type="button" data-concept="head"><small>04 / HEAD</small><strong>Decoupled Head<br>分类与回归</strong></button><i class="arch-arrow">→</i>
-              <button class="arch-node" type="button" data-concept="nms"><small>05 / NMS</small><strong>Confidence · IoU<br>输出净化</strong></button>
+              <button class="arch-node active" type="button" data-concept="input" aria-pressed="true"><small>01 / INPUT</small><strong>Letterbox<br>缩放与填充</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="backbone" aria-pressed="false"><small>02 / BACKBONE</small><strong>C3k2 · SPPF<br>视觉特征提取</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="neck" aria-pressed="false"><small>03 / NECK</small><strong>PAFPN<br>多尺度融合</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="head" aria-pressed="false"><small>04 / HEAD</small><strong>Decoupled Head<br>分类与回归</strong></button><i class="arch-arrow">→</i>
+              <button class="arch-node" type="button" data-concept="nms" aria-pressed="false"><small>05 / NMS</small><strong>Confidence · IoU<br>输出净化</strong></button>
             </div>
             <div class="feature-bars" aria-label="多尺度特征">
               <div class="feature-row"><span>P3</span><div class="feature-track"><div class="feature-fill" id="p3Fill" style="width:86%"></div></div><em>small</em></div>
@@ -370,7 +377,7 @@
           <article class="model-picker">
             <h3>YOLO11 模型规模</h3><p>以 COCO 检测作为相对参考。</p>
             <div class="variant-grid" role="group" aria-label="YOLO11 模型规模">
-              <button class="variant active" type="button" data-variant="n">n</button><button class="variant" type="button" data-variant="s">s</button><button class="variant" type="button" data-variant="m">m</button><button class="variant" type="button" data-variant="l">l</button><button class="variant" type="button" data-variant="x">x</button>
+              <button class="variant active" type="button" data-variant="n" aria-pressed="true">n</button><button class="variant" type="button" data-variant="s" aria-pressed="false">s</button><button class="variant" type="button" data-variant="m" aria-pressed="false">m</button><button class="variant" type="button" data-variant="l" aria-pressed="false">l</button><button class="variant" type="button" data-variant="x" aria-pressed="false">x</button>
             </div>
             <div class="variant-detail">
               <div class="variant-metric"><strong id="variantParams">2.6M</strong><span>参数量</span></div>
@@ -491,23 +498,27 @@
           button.type = 'button';
           button.style.cssText = '--box-color:' + item.color + ';left:' + item.x + '%;top:' + item.y + '%;width:' + item.w + '%;height:' + item.h + '%;animation:boxIn .3s ' + (index * .045) + 's both';
           button.setAttribute('aria-label', item.label + '，置信度 ' + item.conf.toFixed(2));
+          button.setAttribute('aria-pressed', state.selected === item.id ? 'true' : 'false');
           button.innerHTML = '<span class="box-label">' + item.label + ' ' + item.conf.toFixed(2) + '</span>';
           button.addEventListener('click', () => { state.selected = item.id; renderDetections(); });
           detectionLayer.appendChild(button);
         });
         updateMetrics(result);
+        detectionLayer.setAttribute('aria-label', '当前检测框，保留 ' + result.kept.length + ' 个目标，NMS 抑制 ' + result.suppressed.length + ' 个候选框');
         $('statusText').textContent = 'READY · ' + result.kept.length + ' BOX' + (result.kept.length === 1 ? '' : 'ES');
       };
       const updateControls = () => {
-        $('confidenceValue').value = state.conf.toFixed(2);
-        $('iouValue').value = state.iou.toFixed(2);
-        $('sizeValue').value = state.size + ' px';
+        $('confidenceValue').textContent = state.conf.toFixed(2);
+        $('iouValue').textContent = state.iou.toFixed(2);
+        $('sizeValue').textContent = state.size + ' px';
         renderDetections();
       };
       const runInference = async () => {
         if (state.running) return;
         state.running = true;
         $('runButton').classList.add('running');
+        $('runButton').disabled = true;
+        $('runButton').setAttribute('aria-busy', 'true');
         $('runButton').lastElementChild.textContent = '检测进行中…';
         status.classList.add('running');
         stage.classList.remove('scanning'); void stage.offsetWidth; stage.classList.add('scanning');
@@ -522,6 +533,8 @@
         renderDetections();
         await new Promise(resolve => setTimeout(resolve, 350));
         $('runButton').classList.remove('running');
+        $('runButton').disabled = false;
+        $('runButton').setAttribute('aria-busy', 'false');
         $('runButton').lastElementChild.textContent = '运行一次检测';
         status.classList.remove('running');
         state.running = false;
@@ -530,7 +543,11 @@
       sliders.iou.addEventListener('input', (event) => { state.iou = Number(event.target.value); setSliderFill(event.target); updateControls(); });
       document.querySelectorAll('.size-button').forEach(button => button.addEventListener('click', () => {
         state.size = Number(button.dataset.size);
-        document.querySelectorAll('.size-button').forEach(item => item.classList.toggle('active', item === button));
+        document.querySelectorAll('.size-button').forEach(item => {
+          const active = item === button;
+          item.classList.toggle('active', active);
+          item.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
         updateControls();
       }));
       document.querySelectorAll('[data-class]').forEach(check => check.addEventListener('change', () => {
@@ -539,7 +556,7 @@
       }));
       $('runButton').addEventListener('click', runInference);
       window.addEventListener('keydown', (event) => {
-        if (event.code === 'Space' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) { event.preventDefault(); runInference(); }
+        if (event.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(document.activeElement.tagName)) { event.preventDefault(); runInference(); }
       });
 
       const renderConcept = (key) => {
@@ -552,7 +569,11 @@
         ['p3', 'p4', 'p5'].forEach((id, index) => $(id + 'Fill').style.width = item.bars[index] + '%');
       };
       document.querySelectorAll('.arch-node').forEach(button => button.addEventListener('click', () => {
-        document.querySelectorAll('.arch-node').forEach(node => node.classList.toggle('active', node === button));
+        document.querySelectorAll('.arch-node').forEach(node => {
+          const active = node === button;
+          node.classList.toggle('active', active);
+          node.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
         renderConcept(button.dataset.concept);
       }));
 
@@ -568,7 +589,11 @@
           const active = name === key ? ' selected' : '';
           return '<div class="bar-row"><span>11' + name + '</span><div class="bar-track"><div class="bar' + active + '" style="width:' + model.rel + '%"></div></div><strong>' + model.map + '</strong></div>';
         }).join('');
-        document.querySelectorAll('.variant').forEach(button => button.classList.toggle('active', button.dataset.variant === key));
+        document.querySelectorAll('.variant').forEach(button => {
+          const active = button.dataset.variant === key;
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
       };
       document.querySelectorAll('.variant').forEach(button => button.addEventListener('click', () => renderModel(button.dataset.variant)));
 
@@ -578,9 +603,6 @@
         catch { copyButton.textContent = '请手动复制'; }
         setTimeout(() => { copyButton.textContent = '复制'; }, 1600);
       });
-      const style = document.createElement('style');
-      style.textContent = '@keyframes boxIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}';
-      document.head.appendChild(style);
       setSliderFill(sliders.confidence); setSliderFill(sliders.iou); updateControls(); renderModel('n');
     })();
   </script>

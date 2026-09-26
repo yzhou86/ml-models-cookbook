@@ -35,6 +35,7 @@
     button, input, select { font: inherit; }
     button { cursor: pointer; }
     a { color: inherit; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid rgba(77,227,193,.75); outline-offset: 3px; }
 
     .topbar {
       position: sticky;
@@ -309,13 +310,14 @@
 
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
-      .sidebar { position: static; height: auto; padding: 13px 18px; overflow-x: auto; }
+      .sidebar { position: static; min-width: 0; height: auto; padding: 13px 18px; overflow-x: auto; }
       .side-label, .side-progress { display: none; }
       .lesson-nav { display: flex; min-width: max-content; }
       .lesson-nav a { grid-template-columns: 24px 1fr; padding: 8px 10px; }
       .intro-grid { grid-template-columns: 1fr; }
       .concept-grid { grid-template-columns: 1fr; }
-      .model-lab, .two-col, .tuner, .inference-grid, .bench-grid, .demo-grid { grid-template-columns: 1fr; }
+      .model-lab, .two-col, .tuner, .inference-grid, .bench-grid, .demo-grid { grid-template-columns: minmax(0, 1fr); }
+      .model-lab > *, .two-col > *, .tuner > *, .inference-grid > *, .bench-grid > *, .demo-grid > * { min-width: 0; }
       .metric-grid { grid-template-columns: repeat(2, 1fr); }
     }
     @media (max-width: 560px) {
@@ -408,11 +410,11 @@
           <p class="section-intro">先用 tiny 验证数据和训练链路，再决定是否扩大模型。点击下面的模型，观察架构和 M5 建议怎样变化。</p>
           <div class="model-lab">
             <div class="model-options" role="tablist" aria-label="Whisper 模型选择">
-              <button class="model-option selected" data-model="tiny" role="tab" aria-selected="true"><span><strong>Whisper tiny</strong><br><span>最快的流程验证</span></span><span class="model-tag">推荐起点</span></button>
-              <button class="model-option" data-model="base" role="tab" aria-selected="false"><span><strong>Whisper base</strong><br><span>速度与效果折中</span></span><span class="model-tag"></span></button>
-              <button class="model-option" data-model="small" role="tab" aria-selected="false"><span><strong>Whisper small</strong><br><span>更高容量，更慢解码</span></span><span class="model-tag"></span></button>
+              <button class="model-option selected" id="model-tiny" data-model="tiny" role="tab" aria-controls="model-detail" aria-selected="true"><span><strong>Whisper tiny</strong><br><span>最快的流程验证</span></span><span class="model-tag">推荐起点</span></button>
+              <button class="model-option" id="model-base" data-model="base" role="tab" aria-controls="model-detail" aria-selected="false" tabindex="-1"><span><strong>Whisper base</strong><br><span>速度与效果折中</span></span><span class="model-tag"></span></button>
+              <button class="model-option" id="model-small" data-model="small" role="tab" aria-controls="model-detail" aria-selected="false" tabindex="-1"><span><strong>Whisper small</strong><br><span>更高容量，更慢解码</span></span><span class="model-tag"></span></button>
             </div>
-            <div class="model-detail" aria-live="polite">
+            <div class="model-detail" id="model-detail" role="tabpanel" aria-labelledby="model-tiny" aria-live="polite">
               <div class="model-detail-head">
                 <div><h3 id="modelName">Whisper tiny</h3><p id="modelUse">学习流程、快速调参、冒烟测试</p></div>
                 <div class="model-score" id="modelParams">39M</div>
@@ -449,10 +451,10 @@
               <p>这组实验刚刚由仓库脚本运行，用来展示流程和曲线，不作为精度结论。</p>
               <div class="run-badges"><span class="run-badge">tiny</span><span class="run-badge">32 train / 8 eval</span><span class="run-badge">batch 2 × accum 2</span><span class="run-badge">Encoder 冻结</span><span class="run-badge">24 steps</span></div>
               <div class="chart-tabs" role="tablist" aria-label="训练指标">
-                <button class="chart-tab active" data-chart="loss" role="tab" aria-selected="true">Eval loss</button>
-                <button class="chart-tab" data-chart="wer" role="tab" aria-selected="false">WER</button>
+                <button class="chart-tab active" id="chart-loss" data-chart="loss" role="tab" aria-controls="training-chart-panel" aria-selected="true">Eval loss</button>
+                <button class="chart-tab" id="chart-wer" data-chart="wer" role="tab" aria-controls="training-chart-panel" aria-selected="false" tabindex="-1">WER</button>
               </div>
-              <div class="chart-wrap">
+              <div class="chart-wrap" id="training-chart-panel" role="tabpanel" aria-labelledby="chart-loss">
                 <svg id="trainingChart" viewBox="0 0 430 210" role="img" aria-label="三个 epoch 的验证曲线">
                   <line class="chart-grid" x1="48" y1="32" x2="414" y2="32"/><line class="chart-grid" x1="48" y1="92" x2="414" y2="92"/><line class="chart-grid" x1="48" y1="152" x2="414" y2="152"/>
                   <line class="chart-grid" x1="48" y1="176" x2="414" y2="176"/>
@@ -519,7 +521,7 @@
             <article class="card audio-lab">
               <div class="audio-head"><h3>JFK 样例音频</h3><p>11 秒 · 16kHz · 单声道 · 英文</p></div>
               <div class="wave-shell"><canvas id="waveform" aria-label="JFK 示例音频波形"></canvas><span class="wave-time">00:11.0</span></div>
-              <div class="audio-controls"><audio id="sampleAudio" controls preload="metadata" src="assets/jfk.mp3">你的浏览器不支持音频播放。</audio><button class="run-infer" id="runInfer" type="button">回放 MPS 推理链路</button></div>
+              <div class="audio-controls"><audio id="sampleAudio" controls preload="metadata" src="assets/jfk.mp3">你的浏览器不支持音频播放。</audio><button class="run-infer" id="runInfer" type="button" aria-busy="false">回放 MPS 推理链路</button></div>
             </article>
             <article class="card">
               <h3>从声音到句子</h3>
@@ -602,7 +604,7 @@
                 <div class="check-item"><span class="check-icon">3</span><span>同时记录 WER、延迟、模型大小和输出样例。</span></div>
                 <div class="check-item"><span class="check-icon">4</span><span>把结论写入实验记录，而不是只保留终端截图。</span></div>
               </div>
-              <button class="finish-btn" id="finishLesson" type="button">标记为已完成</button>
+              <button class="finish-btn" id="finishLesson" type="button" aria-pressed="false">标记为已完成</button>
               <p class="source-note">页面中的性能数字来自 <code>docs/VALIDATION_M5.md</code>；训练曲线仅用于说明链路，不能当作最终精度结论。</p>
             </article>
           </div>
@@ -621,12 +623,26 @@
       const byId = (id) => document.getElementById(id);
       const setText = (id, value) => { byId(id).textContent = value; };
 
-      document.querySelectorAll(".model-option").forEach((button) => {
-        button.addEventListener("click", () => {
-          const data = modelData[button.dataset.model];
-          document.querySelectorAll(".model-option").forEach((item) => { item.classList.toggle("selected", item === button); item.setAttribute("aria-selected", item === button ? "true" : "false"); });
-          setText("modelName", data.name); setText("modelUse", data.use); setText("modelParams", data.params);
-          setText("modelLayers", data.layers); setText("modelWidth", data.width); setText("modelHeads", data.heads); setText("modelBatch", data.batch); setText("modelNote", data.note);
+      const modelTabs = [...document.querySelectorAll(".model-option")];
+      const activateModel = (button) => {
+        const data = modelData[button.dataset.model];
+        modelTabs.forEach((item) => {
+          const selected = item === button;
+          item.classList.toggle("selected", selected);
+          item.setAttribute("aria-selected", selected ? "true" : "false");
+          item.tabIndex = selected ? 0 : -1;
+        });
+        byId("model-detail").setAttribute("aria-labelledby", button.id);
+        setText("modelName", data.name); setText("modelUse", data.use); setText("modelParams", data.params);
+        setText("modelLayers", data.layers); setText("modelWidth", data.width); setText("modelHeads", data.heads); setText("modelBatch", data.batch); setText("modelNote", data.note);
+      };
+      modelTabs.forEach((button, index) => {
+        button.addEventListener("click", () => activateModel(button));
+        button.addEventListener("keydown", (event) => {
+          if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? modelTabs.length - 1 : (index + (event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1) + modelTabs.length) % modelTabs.length;
+          modelTabs[nextIndex].focus(); activateModel(modelTabs[nextIndex]);
         });
       });
 
@@ -641,11 +657,27 @@
         byId("metricDots").innerHTML = data.values.map((value, index) => { const [x, y] = points[index].split(","); return `<circle class="chart-dot" cx="${x}" cy="${y}" r="5"></circle><text class="chart-value" x="${Number(x) - 17}" y="${Number(y) - 12}">${key === "wer" ? value + "%" : value.toFixed(3)}</text>`; }).join("");
         setText("chartCaption", data.caption);
       };
-      drawChart("loss");
-      document.querySelectorAll(".chart-tab").forEach((button) => button.addEventListener("click", () => {
-        document.querySelectorAll(".chart-tab").forEach((item) => { item.classList.toggle("active", item === button); item.setAttribute("aria-selected", item === button ? "true" : "false"); });
+      const chartTabs = [...document.querySelectorAll(".chart-tab")];
+      const activateChart = (button) => {
+        chartTabs.forEach((item) => {
+          const selected = item === button;
+          item.classList.toggle("active", selected);
+          item.setAttribute("aria-selected", selected ? "true" : "false");
+          item.tabIndex = selected ? 0 : -1;
+        });
+        byId("training-chart-panel").setAttribute("aria-labelledby", button.id);
         drawChart(button.dataset.chart);
-      }));
+      };
+      activateChart(chartTabs[0]);
+      chartTabs.forEach((button, index) => {
+        button.addEventListener("click", () => activateChart(button));
+        button.addEventListener("keydown", (event) => {
+          if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? chartTabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + chartTabs.length) % chartTabs.length;
+          chartTabs[nextIndex].focus(); activateChart(chartTabs[nextIndex]);
+        });
+      });
 
       const tuner = ["tuneModel", "trainSamples", "batch", "epochs", "gradAccum", "learningRate", "trainEncoder", "checkpointing"].map(byId);
       const updateTuner = () => {
@@ -662,7 +694,7 @@
         else advice += "这是 M5 24GB 上较稳妥的流程验证起点，先确认数据和评估逻辑。";
         setText("tuneAdvice", advice);
       };
-      tuner.forEach((control) => control.addEventListener("input", updateTuner)); updateTuner();
+      tuner.forEach((control) => { control.addEventListener("input", updateTuner); control.addEventListener("change", updateTuner); }); updateTuner();
 
       document.querySelectorAll("[data-copy]").forEach((button) => button.addEventListener("click", async () => {
         const original = button.textContent, value = byId(button.dataset.copy).textContent;
@@ -691,16 +723,33 @@
       const replay = byId("runInfer"), transcript = byId("transcriptText"), transcriptLabel = byId("transcriptLabel"), stages = [...document.querySelectorAll(".infer-stage")];
       const verifiedTranscript = "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.";
       replay.addEventListener("click", () => {
-        replay.disabled = true; replay.textContent = "正在回放…"; transcript.textContent = ""; transcript.classList.add("cursor"); transcriptLabel.textContent = "链路回放中"; stages.forEach((stage) => stage.classList.remove("active"));
+        replay.disabled = true; replay.setAttribute("aria-busy", "true"); replay.textContent = "正在回放…"; transcript.textContent = ""; transcript.classList.add("cursor"); transcriptLabel.textContent = "链路回放中"; stages.forEach((stage) => stage.classList.remove("active"));
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          stages.forEach((stage) => stage.classList.add("active"));
+          transcript.textContent = verifiedTranscript; transcript.classList.remove("cursor"); transcriptLabel.textContent = "已验证的转写";
+          replay.disabled = false; replay.setAttribute("aria-busy", "false"); replay.textContent = "再次回放 MPS 推理链路";
+          return;
+        }
         [0, 1, 2, 3].forEach((index) => window.setTimeout(() => stages[index].classList.add("active"), index * 420));
-        window.setTimeout(() => { let position = 0; const typer = window.setInterval(() => { transcript.textContent += verifiedTranscript[position] || ""; position += 1; if (position >= verifiedTranscript.length) { window.clearInterval(typer); transcript.classList.remove("cursor"); transcriptLabel.textContent = "已验证的转写"; replay.disabled = false; replay.textContent = "再次回放 MPS 推理链路"; } }, 13); }, 1500);
+        window.setTimeout(() => { let position = 0; const typer = window.setInterval(() => { transcript.textContent += verifiedTranscript[position] || ""; position += 1; if (position >= verifiedTranscript.length) { window.clearInterval(typer); transcript.classList.remove("cursor"); transcriptLabel.textContent = "已验证的转写"; replay.disabled = false; replay.setAttribute("aria-busy", "false"); replay.textContent = "再次回放 MPS 推理链路"; } }, 13); }, 1500);
       });
 
       const normalize = (text) => text.toLowerCase().replace(/[^a-z0-9\\s']/g, " ").replace(/\\s+/g, " ").trim().split(" ").filter(Boolean);
       const calculateWer = () => {
         const reference = normalize(byId("referenceInput").value), hypothesis = normalize(byId("hypothesisInput").value), rows = reference.length + 1, cols = hypothesis.length + 1;
-        const matrix = Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => i === 0 ? { cost: j, s: 0, d: 0, ins: j } : j === 0 ? { cost: i, s: 0, d: i, ins: 0 } : null));
-        for (let i = 1; i < rows; i += 1) for (let j = 1; j < cols; j += 1) { if (reference[i - 1] === hypothesis[j - 1]) matrix[i][j] = { ...matrix[i - 1][j - 1] }; else { const candidates = [{ ...matrix[i - 1][j - 1], s: matrix[i - 1][j - 1].s + 1 }, { ...matrix[i - 1][j], d: matrix[i - 1][j].d + 1 }, { ...matrix[i][j - 1], ins: matrix[i][j - 1].ins + 1 }]; matrix[i][j] = candidates.reduce((best, item) => item.cost + item.s + item.d + item.ins < best.cost + best.s + best.d + best.ins ? item : best); } }
+        const matrix = Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => i === 0 ? { errors: j, s: 0, d: 0, ins: j } : j === 0 ? { errors: i, s: 0, d: i, ins: 0 } : null));
+        for (let i = 1; i < rows; i += 1) for (let j = 1; j < cols; j += 1) {
+          if (reference[i - 1] === hypothesis[j - 1]) matrix[i][j] = { ...matrix[i - 1][j - 1] };
+          else {
+            const substitution = matrix[i - 1][j - 1], deletion = matrix[i - 1][j], insertion = matrix[i][j - 1];
+            const candidates = [
+              { errors: substitution.errors + 1, s: substitution.s + 1, d: substitution.d, ins: substitution.ins },
+              { errors: deletion.errors + 1, s: deletion.s, d: deletion.d + 1, ins: deletion.ins },
+              { errors: insertion.errors + 1, s: insertion.s, d: insertion.d, ins: insertion.ins + 1 }
+            ];
+            matrix[i][j] = candidates.reduce((best, item) => item.errors < best.errors ? item : best);
+          }
+        }
         const result = matrix[rows - 1][cols - 1], errors = result.s + result.d + result.ins, rate = reference.length ? errors / reference.length * 100 : 0;
         setText("werResult", `${rate.toFixed(1)}%`); setText("werBreakdown", `${result.s} 替换 · ${result.d} 删除 · ${result.ins} 插入`);
       };
@@ -711,11 +760,14 @@
       [byId("referenceInput"), byId("hypothesisInput")].forEach((input) => input.addEventListener("input", calculateWer)); calculateWer();
 
       const lessonSections = [...document.querySelectorAll(".section")], progressMeta = document.querySelector(".progress-meta span:last-child"), progressBar = document.querySelector(".progress-bar");
-      const setLesson = (index) => { document.querySelectorAll(".lesson-nav a").forEach((link, linkIndex) => link.classList.toggle("active", linkIndex === index)); progressMeta.textContent = `${index + 1} / ${lessonSections.length}`; progressBar.style.width = `${(index + 1) / lessonSections.length * 100}%`; };
+      progressBar.setAttribute("role", "progressbar"); progressBar.setAttribute("aria-valuemin", "1"); progressBar.setAttribute("aria-valuemax", String(lessonSections.length)); progressBar.setAttribute("aria-label", "课程进度");
+      const setLesson = (index) => { document.querySelectorAll(".lesson-nav a").forEach((link, linkIndex) => link.classList.toggle("active", linkIndex === index)); progressMeta.textContent = `${index + 1} / ${lessonSections.length}`; progressBar.style.width = `${(index + 1) / lessonSections.length * 100}%`; progressBar.setAttribute("aria-valuenow", String(index + 1)); };
       const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) setLesson(lessonSections.indexOf(entry.target)); }), { rootMargin: "-28% 0px -62% 0px", threshold: .01 }); lessonSections.forEach((section) => observer.observe(section));
 
-      const finish = byId("finishLesson"); if (localStorage.getItem("whisper-tutorial-complete") === "true") { finish.classList.add("done"); finish.textContent = "已完成 · 再学一遍"; }
-      finish.addEventListener("click", () => { const done = !finish.classList.contains("done"); finish.classList.toggle("done", done); finish.textContent = done ? "已完成 · 再学一遍" : "标记为已完成"; localStorage.setItem("whisper-tutorial-complete", String(done)); });
+      const finish = byId("finishLesson");
+      const setCompletion = (done) => { finish.classList.toggle("done", done); finish.setAttribute("aria-pressed", String(done)); finish.textContent = done ? "已完成 · 再学一遍" : "标记为已完成"; };
+      if (localStorage.getItem("whisper-tutorial-complete") === "true") setCompletion(true);
+      finish.addEventListener("click", () => { const done = !finish.classList.contains("done"); setCompletion(done); localStorage.setItem("whisper-tutorial-complete", String(done)); });
     })();
   </script>
 </body>
